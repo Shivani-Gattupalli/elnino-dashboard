@@ -1,0 +1,37 @@
+State,Sensitivity,Base_Pred,Risk_Level,State_LPA
+ANDAMAN & NICOBAR ISLANDS,-0.313,Excess,High Risk,2899.3
+ARUNACHAL PRADESH,0.096,Excess,Low Risk,2844.1
+ASSAM & MEGHALAYA,-0.122,Excess,Moderate Risk,2510.9
+NAGA MANI MIZO TRIPURA,-0.114,Excess,Moderate Risk,2311.7
+SUB HIMALAYAN WEST BENGAL & SIKKIM,-0.309,Excess,High Risk,2761.4
+GANGETIC WEST BENGAL,-0.269,Normal,Moderate Risk,1516.8
+ORISSA,-0.119,Normal,Moderate Risk,1427.6
+JHARKHAND,-0.198,Deficit,Moderate Risk,1257.1
+BIHAR,-0.27,Deficit,Moderate Risk,1158.0
+EAST UTTAR PRADESH,-0.366,Deficit,High Risk,941.3
+WEST UTTAR PRADESH,-0.227,Deficit,Moderate Risk,819.9
+UTTARAKHAND,-0.327,Normal,High Risk,1453.4
+HARYANA DELHI & CHANDIGARH,-0.196,Deficit,Moderate Risk,541.6
+PUNJAB,-0.334,Deficit,High Risk,609.2
+HIMACHAL PRADESH,-0.033,Deficit,Low Risk,1256.6
+JAMMU & KASHMIR,0.21,Deficit,Low Risk,1187.9
+WEST RAJASTHAN,-0.153,Deficit,Moderate Risk,297.2
+EAST RAJASTHAN,-0.258,Deficit,Moderate Risk,647.2
+WEST MADHYA PRADESH,-0.208,Deficit,Moderate Risk,947.9
+EAST MADHYA PRADESH,-0.152,Deficit,Moderate Risk,1149.0
+GUJARAT REGION,-0.139,Deficit,Moderate Risk,924.9
+SAURASHTRA & KUTCH,-0.185,Deficit,Moderate Risk,522.5
+KONKAN & GOA,-0.263,Excess,Moderate Risk,3071.6
+MADHYA MAHARASHTRA,-0.181,Deficit,Moderate Risk,908.6
+MATATHWADA,-0.171,Deficit,Moderate Risk,791.9
+VIDARBHA,-0.151,Deficit,Moderate Risk,1073.1
+CHHATTISGARH,-0.108,Normal,Moderate Risk,1311.2
+COASTAL ANDHRA PRADESH,-0.07,Deficit,Low Risk,1069.7
+TELANGANA,-0.156,Deficit,Moderate Risk,986.4
+RAYALSEEMA,-0.042,Deficit,Low Risk,774.8
+TAMIL NADU,0.025,Deficit,Low Risk,927.6
+COASTAL KARNATAKA,-0.142,Excess,Moderate Risk,3527.3
+NORTH INTERIOR KARNATAKA,-0.12,Deficit,Moderate Risk,738.3
+SOUTH INTERIOR KARNATAKA,-0.058,Deficit,Low Risk,1074.5
+KERALA,-0.131,Excess,Moderate Risk,2844.3
+LAKSHADWEEP,-0.232,Excess,Moderate Risk,1571.9
