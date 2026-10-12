@@ -1,0 +1,37 @@
+State,Sensitivity,Base_Pred,Heatwave,Risk_Level,State_LPA
+ANDAMAN & NICOBAR ISLANDS,-0.353,Excess,High,High Risk,2929.5
+ARUNACHAL PRADESH,0.125,Excess,High,Low Risk,2860.5
+ASSAM & MEGHALAYA,-0.089,Excess,High,Low Risk,2522.0
+NAGA MANI MIZO TRIPURA,-0.168,Excess,High,Moderate Risk,2309.2
+SUB HIMALAYAN WEST BENGAL & SIKKIM,-0.25,Excess,High,Moderate Risk,2770.6
+GANGETIC WEST BENGAL,-0.218,Normal,High,Moderate Risk,1514.0
+ORISSA,-0.101,Normal,High,Moderate Risk,1438.9
+JHARKHAND,-0.162,Deficit,High,Moderate Risk,1260.0
+BIHAR,-0.244,Deficit,High,Moderate Risk,1156.6
+EAST UTTAR PRADESH,-0.379,Deficit,High,High Risk,950.1
+WEST UTTAR PRADESH,-0.252,Deficit,High,Moderate Risk,831.9
+UTTARAKHAND,-0.409,Normal,High,High Risk,1469.6
+HARYANA DELHI & CHANDIGARH,-0.248,Deficit,High,Moderate Risk,554.7
+PUNJAB,-0.402,Deficit,High,High Risk,622.4
+HIMACHAL PRADESH,-0.038,Deficit,High,Low Risk,1264.4
+JAMMU & KASHMIR,0.197,Deficit,High,Low Risk,1189.8
+WEST RAJASTHAN,-0.167,Deficit,High,Moderate Risk,304.0
+EAST RAJASTHAN,-0.345,Deficit,High,High Risk,657.4
+WEST MADHYA PRADESH,-0.244,Deficit,High,Moderate Risk,946.5
+EAST MADHYA PRADESH,-0.137,Deficit,High,Moderate Risk,1152.9
+GUJARAT REGION,-0.197,Deficit,High,Moderate Risk,929.3
+SAURASHTRA & KUTCH,-0.251,Deficit,High,Moderate Risk,512.4
+KONKAN & GOA,-0.299,Excess,High,Moderate Risk,3085.0
+MADHYA MAHARASHTRA,-0.22,Deficit,High,Moderate Risk,901.9
+MATATHWADA,-0.166,Deficit,High,Moderate Risk,786.3
+VIDARBHA,-0.162,Deficit,High,Moderate Risk,1070.1
+CHHATTISGARH,-0.096,Normal,High,Low Risk,1324.2
+COASTAL ANDHRA PRADESH,-0.123,Deficit,High,Moderate Risk,1077.1
+TELANGANA,-0.168,Deficit,High,Moderate Risk,989.1
+RAYALSEEMA,-0.106,Deficit,High,Moderate Risk,782.1
+TAMIL NADU,0.009,Deficit,High,Low Risk,925.9
+COASTAL KARNATAKA,-0.146,Excess,High,Moderate Risk,3524.1
+NORTH INTERIOR KARNATAKA,-0.178,Deficit,High,Moderate Risk,734.8
+SOUTH INTERIOR KARNATAKA,-0.084,Deficit,High,Low Risk,1069.8
+KERALA,-0.154,Excess,High,Moderate Risk,2844.4
+LAKSHADWEEP,-0.204,Excess,High,Moderate Risk,1563.0
