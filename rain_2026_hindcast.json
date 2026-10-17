@@ -1,0 +1,14 @@
+{
+  "probabilities": {
+    "Deficit": 0.6236875660326715,
+    "Excess": 0.13595820463707836,
+    "Normal": 0.24035422933025025
+  },
+  "confidence": "Low",
+  "trust_weight": 0.6900000000000001,
+  "analog_years": {
+    "Deficit": 4,
+    "Normal": 3
+  },
+  "caveat": "2026 predictors lie at the edge of the training range."
+}

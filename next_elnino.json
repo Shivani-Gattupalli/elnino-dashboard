@@ -1,0 +1,8 @@
+{
+  "last_observed_oni": 2.1600000858306885,
+  "last_observed_date": "2026-08-01",
+  "currently_el_nino": true,
+  "current_event_expected_end": "2027-03-01",
+  "next_el_nino_onset": null,
+  "note": "LSTM trained on ONI history only; skill is low beyond ~6 months. Compare with NOAA CPC/IRI outlook."
+}

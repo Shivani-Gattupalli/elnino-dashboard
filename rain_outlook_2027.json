@@ -1,0 +1,11 @@
+{
+  "probabilities": {
+    "Deficit": 0.13206077830588644,
+    "Excess": 0.6225600331279665,
+    "Normal": 0.24537918856614754
+  },
+  "confidence": "Low",
+  "trust_weight": 0.6900000000000001,
+  "climatology": 0.333,
+  "caveat": "Forecast ONI at 14-month lead plus a weak model (p=0.086). Indicative only."
+}

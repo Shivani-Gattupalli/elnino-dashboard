@@ -1,598 +1,526 @@
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import joblib
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import requests
-from io import StringIO
+import json
 import warnings
+from io import StringIO
+
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+
 warnings.filterwarnings("ignore")
 
-st.set_page_config(
-    page_title="India Monsoon Risk",
-    page_icon="🌧️",
-    layout="wide"
-)
+st.set_page_config(page_title="India Monsoon Risk", page_icon="🌧️", layout="wide")
 
 st.markdown("""
 <style>
-.main-title {
-    font-size:2.2rem; font-weight:bold;
-    color:#1B2A4A; text-align:center; padding:10px;
-}
-.sub-title {
-    font-size:1rem; color:#666;
-    text-align:center; margin-bottom:15px;
-}
-.status-card {
-    background:linear-gradient(135deg,#1B2A4A,#2E4A7A);
-    color:white; padding:18px; border-radius:12px;
-    text-align:center; margin:4px;
-}
-.risk-high {
-    background:#FF4444; color:white; padding:14px;
-    border-radius:10px; font-size:1.1rem;
-    font-weight:bold; text-align:center; margin:4px;
-}
-.risk-moderate {
-    background:#FF8C00; color:white; padding:14px;
-    border-radius:10px; font-size:1.1rem;
-    font-weight:bold; text-align:center; margin:4px;
-}
-.risk-low {
-    background:#28A745; color:white; padding:14px;
-    border-radius:10px; font-size:1.1rem;
-    font-weight:bold; text-align:center; margin:4px;
-}
-.action-box {
-    background:#FFF3CD; border-left:5px solid #FFC107;
-    padding:15px; border-radius:8px; margin:8px 0;
-}
-.info-box {
-    background:#E8F4FD; border-left:5px solid #2196F3;
-    padding:15px; border-radius:8px; margin:8px 0;
-}
-.timeline-box {
-    background:#F0F4FF; border:2px solid #1B2A4A;
-    padding:18px; border-radius:12px; margin:10px 0;
-}
+.main-title {font-size:2.2rem; font-weight:bold; color:#1B2A4A; text-align:center; padding:10px;}
+.sub-title {font-size:1rem; color:#666; text-align:center; margin-bottom:15px;}
+.status-card {background:linear-gradient(135deg,#1B2A4A,#2E4A7A); color:white; padding:18px;
+              border-radius:12px; text-align:center; margin:4px;}
+.risk-high {background:#FF4444; color:white; padding:14px; border-radius:10px; font-size:1.1rem;
+            font-weight:bold; text-align:center; margin:4px;}
+.risk-moderate {background:#FF8C00; color:white; padding:14px; border-radius:10px; font-size:1.1rem;
+                font-weight:bold; text-align:center; margin:4px;}
+.risk-low {background:#28A745; color:white; padding:14px; border-radius:10px; font-size:1.1rem;
+           font-weight:bold; text-align:center; margin:4px;}
+.action-box {background:#FFF3CD; border-left:5px solid #FFC107; padding:15px; border-radius:8px; margin:8px 0; color:#222;}
+.info-box {background:#E8F4FD; border-left:5px solid #2196F3; padding:15px; border-radius:8px; margin:8px 0; color:#222;}
+.timeline-box {background:#F0F4FF; border:2px solid #1B2A4A; padding:18px; border-radius:12px; margin:10px 0; color:#222;}
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_resource
-def load_models():
-    xgb_rain = joblib.load("xgb_model.pkl")
-    xgb_heat = joblib.load("xgb_heat_model.pkl")
-    scaler   = joblib.load("scaler.pkl")
-    iod_sc   = joblib.load("iod_scaler.pkl")
-    le_rain  = joblib.load("label_encoder.pkl")
-    le_heat  = joblib.load("le_heat.pkl")
-    return xgb_rain, xgb_heat, scaler, iod_sc, le_rain, le_heat
+COL = {"Red": "#e74c3c", "Orange": "#f39c12", "Green": "#27ae60"}
+RANK = {"Green": 0, "Orange": 1, "Red": 2}
+ONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
+DMI_URL = "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data"
+IOD_SLOPE, IOD_INTERCEPT = 0.901, 0.131   # maps NOAA PSL DMI to the units of master_dataset.csv (from Colab Cell 4)
 
+
+# ════════════════════════════════════════════════════════
+# DATA LOADING (all files are produced by the Colab notebook)
+# ════════════════════════════════════════════════════════
 @st.cache_data
-def load_data():
-    master     = pd.read_csv("master_dataset.csv")
-    state_df   = pd.read_csv("state_dataset.csv")
-    state_risk = pd.read_csv("state_risk.csv")
-    iod_data   = pd.read_csv("iod_data.csv")
-    return master, state_df, state_risk, iod_data
+def load_outputs():
+    return dict(
+        master=pd.read_csv("master_dataset.csv"),
+        sa=pd.read_csv("state_annual_extended.csv"),
+        fm=pd.read_csv("forecast_state_monthly.csv"),
+        al=pd.read_csv("alerts.csv"),
+        fo=pd.read_csv("oni_forecast.csv", parse_dates=["DATE"]),
+        nxt=json.load(open("next_elnino.json")),
+        o27=json.load(open("rain_outlook_2027.json")),
+        h26=json.load(open("rain_2026_hindcast.json")),
+        info=json.load(open("model_info.json")),
+        cmp=pd.read_csv("model_comparison_terciles.csv"),
+        bt=pd.read_csv("oni_backtest.csv"),
+        cal=pd.read_csv("era5_calibration.csv"),
+    )
 
-xgb_rain,xgb_heat,scaler,iod_sc,le_rain,le_heat = load_models()
-master_df,state_df,state_risk,iod_df = load_data()
+
+O = load_outputs()
+master_df, sa, fm, al, fo = O["master"], O["sa"], O["fm"], O["al"], O["fo"]
+nxt, info = O["nxt"], O["info"]
+
 
 @st.cache_data(ttl=86400)
 def get_live():
+    """Live ONI from NOAA CPC. Returns a dict; ok=False if the download fails."""
     try:
-        url = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
-        raw = requests.get(url, timeout=10).text
-        df  = pd.read_csv(StringIO(raw), sep=r"\\s+")
-        recent   = df.tail(12).reset_index(drop=True)
-        live_oni = float(df.iloc[-1]["ANOM"])
-        sea      = str(df.iloc[-1]["SEAS"])
-        yr       = int(df.iloc[-1]["YR"])
+        raw = requests.get(ONI_URL, timeout=15).text
+        df = pd.read_csv(StringIO(raw), sep=r"\s+")          # single backslash: split on whitespace
+        df = df.dropna(subset=["ANOM"]).reset_index(drop=True)
+        vals = df["ANOM"].astype(float).values
+        last = float(vals[-1])
+        sign = 1 if last >= 0.5 else (-1 if last <= -0.5 else 0)
+        n, start = 0, None
+        if sign != 0:                                         # count back through the unbroken run
+            i = len(vals) - 1
+            while i >= 0 and sign * vals[i] >= 0.5:
+                n += 1
+                i -= 1
+            s = len(vals) - n
+            start = f"{df['SEAS'].iloc[s]} {int(df['YR'].iloc[s])}"
+        return dict(ok=True, oni=last, season=str(df["SEAS"].iloc[-1]), year=int(df["YR"].iloc[-1]),
+                    recent=df.tail(12).reset_index(drop=True), start=start, n=n)
+    except Exception:
+        return dict(ok=False)
 
-        # Find when El Nino started from recent data
-        start_season = None
-        months_active = 0
-        if live_oni >= 0.5:
-            for _, row in recent.iterrows():
-                if float(row["ANOM"]) >= 0.5:
-                    if start_season is None:
-                        start_season = str(row["SEAS"])+" "+str(int(row["YR"]))
-                    months_active += 1
-        elif live_oni <= -0.5:
-            for _, row in recent.iterrows():
-                if float(row["ANOM"]) <= -0.5:
-                    if start_season is None:
-                        start_season = str(row["SEAS"])+" "+str(int(row["YR"]))
-                    months_active += 1
 
-        # Estimate end
-        if live_oni >= 1.5:
-            est_end = "Early 2027 (Strong El Nino typically lasts 12-18 months)"
-        elif live_oni >= 0.5:
-            remaining = max(3, 9 - months_active)
-            est_end   = f"In about {remaining} months (El Nino started {months_active} seasons ago)"
-        elif live_oni <= -1.0:
-            remaining = max(3, 12 - months_active)
-            est_end   = f"In about {remaining} months (La Nina started {months_active} seasons ago)"
-        elif live_oni <= -0.5:
-            remaining = max(3, 9 - months_active)
-            est_end   = f"In about {remaining} months"
-        else:
-            est_end = "Currently normal — no active event"
+@st.cache_data(ttl=86400)
+def get_live_iod():
+    """Latest monthly DMI from NOAA PSL, mapped to the project's IOD units."""
+    try:
+        raw = requests.get(DMI_URL, timeout=15).text
+        last = None
+        for line in raw.splitlines():
+            p = line.split()
+            if len(p) == 13 and p[0].isdigit() and 1870 <= int(p[0]) <= 2100:
+                for m, x in enumerate(p[1:], start=1):
+                    if float(x) > -90:                         # -9999 / -99.99 are missing codes
+                        last = (int(p[0]), m, float(x))
+        if last is None:
+            return None
+        return round(last[2] * IOD_SLOPE + IOD_INTERCEPT, 2), f"{last[0]}-{last[1]:02d}"
+    except Exception:
+        return None
 
-        if start_season is None:
-            start_season = "Not applicable (ocean is currently normal)"
 
-        return live_oni, 0.2, sea, yr, recent, start_season, est_end, months_active
-    except Exception as e:
-        return 0.5, 0.2, "JJA", 2026, None, "March 2026", "December 2026 (estimated)", 4
+live = get_live()
+if live["ok"]:
+    live_oni, live_season, live_year = live["oni"], live["season"], live["year"]
+    recent_oni, start_season, months_active = live["recent"], live["start"], live["n"]
+    live_note = "Live from NOAA CPC"
+else:                                                         # fall back to the last saved snapshot, and say so
+    live_oni, live_season = float(nxt["last_observed_oni"]), "latest"
+    live_year = int(str(nxt["last_observed_date"])[:4])
+    recent_oni, start_season, months_active = None, None, 0
+    live_note = f"NOAA unreachable, showing saved snapshot ({nxt['last_observed_date']})"
 
-live_oni,live_iod,live_season,live_year,recent_oni,start_season,est_end,months_active = get_live()
+iod_live = get_live_iod()
+live_iod = iod_live[0] if iod_live else 0.2
+iod_note = f"as of {iod_live[1]}" if iod_live else "approximate"
 
-lpa_per_state = state_df.groupby("SUBDIVISION")["ANNUAL"].mean()
-state_sensitivity = {}
-for sub in state_df["SUBDIVISION"].unique():
-    d = state_df[state_df["SUBDIVISION"]==sub]
-    state_sensitivity[sub] = d["ONI"].corr(d["ANNUAL"])
-
-def classify_heatwave(oni, iod):
-    score = oni + (iod * 0.5)
-    if score>=1.0: return "High"
-    elif score>=0.4: return "Moderate"
-    else: return "Low"
-
+# ENSO phase text
 if live_oni >= 1.0:
-    phase_name = "STRONG El Nino"
-    phase_emoji = "🔴"
-    phase_plain = "The Pacific Ocean is MUCH warmer than normal. This strongly suppresses India's monsoon."
+    phase_name, phase_emoji = "STRONG El Nino", "🔴"
+    phase_plain = "The Pacific Ocean is MUCH warmer than normal. This tends to suppress India's monsoon."
 elif live_oni >= 0.5:
-    phase_name = "El Nino Active"
-    phase_emoji = "🟠"
+    phase_name, phase_emoji = "El Nino Active", "🟠"
     phase_plain = "The Pacific Ocean is warmer than normal. India's monsoon is at risk of being weaker."
 elif live_oni <= -1.0:
-    phase_name = "STRONG La Nina"
-    phase_emoji = "🔵"
-    phase_plain = "The Pacific Ocean is MUCH cooler than normal. India's monsoon is likely to be very good."
+    phase_name, phase_emoji = "STRONG La Nina", "🔵"
+    phase_plain = "The Pacific Ocean is MUCH cooler than normal. India's monsoon tends to be wetter."
 elif live_oni <= -0.5:
-    phase_name = "La Nina Active"
-    phase_emoji = "🔵"
-    phase_plain = "The Pacific Ocean is cooler than normal. India's monsoon is expected to be good."
+    phase_name, phase_emoji = "La Nina Active", "🔵"
+    phase_plain = "The Pacific Ocean is cooler than normal. India's monsoon tends to be good."
 else:
-    phase_name = "Normal Conditions"
-    phase_emoji = "🟢"
-    phase_plain = "Ocean temperatures are normal. No major disruption to India's monsoon expected."
+    phase_name, phase_emoji = "Normal Conditions", "🟢"
+    phase_plain = "Ocean temperatures are near normal. No major ENSO disruption expected."
+
+# Start / end of the event
+if start_season is None:
+    start_season = "Not applicable (no active event)" if abs(live_oni) < 0.5 else "Unavailable (offline)"
+if abs(live_oni) < 0.5:
+    est_end = "No active event"
+elif live_oni >= 0.5 and nxt.get("currently_el_nino") and nxt.get("current_event_expected_end"):
+    est_end = (f"Around {pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y')} "
+               "(LSTM forecast, low confidence)")
+else:
+    est_end = "Not available in the latest forecast"
+
+# State list and helpers
+PRETTY = {"MATATHWADA": "Marathwada"}                         # the Kaggle CSV misspells Marathwada
+
+
+def pretty(s):
+    if s == "":
+        return "-- Select Your State --"
+    return PRETTY.get(s, s.title())
+
+
+# State sensitivity (correlation of annual ONI with state annual rainfall) and long-period average, 1950-2024
+sad = sa.merge(master_df[["YEAR", "ONI", "ENSO_Phase"]], on="YEAR", how="left")
+sens = {s: d["ONI"].corr(d["ANNUAL"]) for s, d in sad.groupby("SUBDIVISION")}
+lpa = sa[sa.SOURCE == "IMD"].groupby("SUBDIVISION")["ANNUAL"].mean().to_dict()
+
+
+def state_signals(sub):
+    """Monsoon-2027 rainfall signal and hot-season (Mar-Jun 2027) heat risk for one subdivision."""
+    g = fm[fm.SUBDIVISION == sub]
+    mon = g[g.MONTH.isin(["2027-06", "2027-07", "2027-08"]) & (g.Rain_Confidence != "Low")]
+    rain = mon.Rainfall_Pred.value_counts().index[0] if len(mon) else "Normal"
+    has_signal = bool(len(mon)) and rain != "Normal"
+    hrank = {"Low": 0, "Moderate": 1, "High": 2}
+    hot = g[g.MONTH.isin(["2027-03", "2027-04", "2027-05", "2027-06"])]
+    heat = max(hot.Heat_Risk, key=lambda x: hrank[x]) if len(hot) else "Low"
+    return rain, has_signal, heat
+
 
 # ════════════════════════════════════════════════════════
 # TITLE
 # ════════════════════════════════════════════════════════
-st.markdown(
-    "<div class=\"main-title\">🌧️ India Monsoon & Heatwave Risk Predictor</div>",
-    unsafe_allow_html=True)
-st.markdown(
-    "<div class=\"sub-title\">Real-time ocean data from NOAA → "
-    "Your state's risk → What to do right now</div>",
-    unsafe_allow_html=True)
+st.markdown('<div class="main-title">🌧️ India Monsoon & Heatwave Risk Predictor</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">El Niño + Indian Ocean Dipole → 12-month outlook → '
+            'State alerts → What to do</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # ════════════════════════════════════════════════════════
 # OCEAN STATUS
 # ════════════════════════════════════════════════════════
 st.markdown("### 🌊 What Is the Ocean Doing Right Now?")
-
 col1, col2 = st.columns([1.2, 1])
-
 with col1:
     st.markdown(
-        f"<div class=\"status-card\">"
-        f"<div style=\"font-size:3rem\">{phase_emoji}</div>"
-        f"<div style=\"font-size:1.6rem;font-weight:bold;margin:5px\">"
-        f"{phase_name}</div>"
-        f"<div style=\"font-size:1rem;opacity:0.9\">{phase_plain}</div>"
-        f"<div style=\"margin-top:12px;font-size:0.85rem;opacity:0.75\">"
-        f"Pacific Ocean (ONI) = {round(live_oni,2)} | "
-        f"Indian Ocean (IOD) = {round(live_iod,2)}</div>"
-        f"</div>",
-        unsafe_allow_html=True)
-
+        f'<div class="status-card"><div style="font-size:3rem">{phase_emoji}</div>'
+        f'<div style="font-size:1.6rem;font-weight:bold;margin:5px">{phase_name}</div>'
+        f'<div style="font-size:1rem;opacity:0.9">{phase_plain}</div>'
+        f'<div style="margin-top:12px;font-size:0.85rem;opacity:0.75">'
+        f'Pacific (ONI) = {live_oni:.2f} | Indian Ocean (IOD) = {live_iod:.2f} ({iod_note})<br>{live_note}'
+        f'</div></div>', unsafe_allow_html=True)
 with col2:
     st.markdown("#### ⏱️ Duration & Timeline")
     st.markdown(
-        f"<div class=\"timeline-box\">"
-        f"<table width=\"100%\"><tr>"
-        f"<td style=\"padding:8px;vertical-align:top\">"
-        f"<span style=\"font-size:0.85rem;color:#666\">📅 WHEN DID IT START?</span><br>"
-        f"<b style=\"color:#1B2A4A\">{start_season}</b></td></tr>"
-        f"<tr><td style=\"padding:8px;vertical-align:top\">"
-        f"<span style=\"font-size:0.85rem;color:#666\">⏳ HOW LONG ACTIVE?</span><br>"
-        f"<b style=\"color:#1B2A4A\">{months_active} seasons (≈{months_active} months)</b>"
-        f"</td></tr>"
-        f"<tr><td style=\"padding:8px;vertical-align:top\">"
-        f"<span style=\"font-size:0.85rem;color:#666\">🔚 WHEN WILL IT END?</span><br>"
-        f"<b style=\"color:#CC0000\">{est_end}</b>"
-        f"</td></tr></table>"
-        f"</div>",
-        unsafe_allow_html=True)
+        f'<div class="timeline-box"><table width="100%">'
+        f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">📅 WHEN DID IT START?</span><br>'
+        f'<b style="color:#1B2A4A">{start_season}</b></td></tr>'
+        f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">⏳ HOW LONG ACTIVE?</span><br>'
+        f'<b style="color:#1B2A4A">{months_active} overlapping 3-month seasons</b></td></tr>'
+        f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">🔚 WHEN WILL IT END?</span><br>'
+        f'<b style="color:#CC0000">{est_end}</b></td></tr></table></div>', unsafe_allow_html=True)
 
-# ONI Timeline chart
-if recent_oni is not None and len(recent_oni) > 0:
-    st.markdown("#### 📈 Ocean Temperature — Last 12 Seasons (Live from NOAA)")
-    fig_t, ax_t = plt.subplots(figsize=(12,3))
-    fig_t.patch.set_facecolor("#F8F9FA")
-    ax_t.set_facecolor("#F8F9FA")
-    try:
-        seasons = [str(r["SEAS"])+" "+str(int(r["YR"]))
-                   for _,r in recent_oni.iterrows()]
-        values  = [float(r["ANOM"]) for _,r in recent_oni.iterrows()]
-        colors  = ["#FF4444" if v>=0.5 else "#4444FF" if v<=-0.5 else "#888888"
-                   for v in values]
-        ax_t.bar(range(len(seasons)), values, color=colors, alpha=0.85,
-                 edgecolor="white")
-        ax_t.axhline(0.5,  color="#FF4444",linestyle="--",linewidth=1.5,
-                     label="El Nino starts (+0.5)")
-        ax_t.axhline(-0.5, color="#4444FF",linestyle="--",linewidth=1.5,
-                     label="La Nina starts (-0.5)")
-        ax_t.axhline(0, color="black", linewidth=0.5)
-        ax_t.set_xticks(range(len(seasons)))
-        ax_t.set_xticklabels(seasons, rotation=45, ha="right", fontsize=8)
-        ax_t.set_ylabel("Ocean Temperature Anomaly")
-        ax_t.set_title(
-            "Pacific Ocean Temperature — Last 12 Months | "
-            "Red = El Nino | Blue = La Nina",
-            fontweight="bold", color="#2C3E50", fontsize=10)
-        ax_t.legend(fontsize=8)
-        ax_t.spines["top"].set_visible(False)
-        ax_t.spines["right"].set_visible(False)
-        st.pyplot(fig_t)
-    except:
-        st.info("Timeline chart loading...")
+# ONI: last 12 observed seasons + LSTM forecast
+st.markdown("#### 📈 Ocean Temperature: observed (NOAA) and 12-month forecast (LSTM)")
+fig_t, ax_t = plt.subplots(figsize=(12, 3.4))
+fig_t.patch.set_facecolor("#F8F9FA")
+ax_t.set_facecolor("#F8F9FA")
+labels, vals, cols_, alphas = [], [], [], []
+if recent_oni is not None:
+    for _, r in recent_oni.iterrows():
+        v = float(r["ANOM"])
+        labels.append(f"{r['SEAS']} {int(r['YR'])}")
+        vals.append(v)
+        cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
+        alphas.append(0.9)
+for _, r in fo.iterrows():
+    v = float(r["ONI_forecast"])
+    labels.append(r["DATE"].strftime("%b %y"))
+    vals.append(v)
+    cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
+    alphas.append(0.45)
+for i, (v, c, a) in enumerate(zip(vals, cols_, alphas)):
+    ax_t.bar(i, v, color=c, alpha=a, edgecolor="white")
+n_obs = len(labels) - len(fo)
+if n_obs > 0:
+    ax_t.axvline(n_obs - 0.5, color="black", linestyle=":", linewidth=1)
+    ax_t.text(n_obs - 0.4, ax_t.get_ylim()[1] * 0.9, "forecast →", fontsize=8)
+ax_t.axhline(0.5, color="#FF4444", linestyle="--", linewidth=1.2, label="El Nino (+0.5)")
+ax_t.axhline(-0.5, color="#4444FF", linestyle="--", linewidth=1.2, label="La Nina (-0.5)")
+ax_t.axhline(0, color="black", linewidth=0.5)
+ax_t.set_xticks(range(len(labels)))
+ax_t.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
+ax_t.set_ylabel("ONI")
+ax_t.legend(fontsize=8, loc="lower left")
+ax_t.spines["top"].set_visible(False)
+ax_t.spines["right"].set_visible(False)
+st.pyplot(fig_t)
+plt.close(fig_t)
 
+if nxt.get("next_el_nino_onset"):
+    st.info(f"New El Niño forecast to start: {nxt['next_el_nino_onset']}")
+else:
+    st.success("No new El Niño onset forecast within the 12-month window.")
+bt = O["bt"]
+st.caption(
+    f"{nxt['note']} In a 5-year backtest the LSTM beat the 'stays the same' baseline at every lead "
+    f"(error {bt.LSTM_MAE.iloc[0]:.2f} vs {bt.Persistence_MAE.iloc[0]:.2f} at 1 month, "
+    f"{bt.LSTM_MAE.iloc[-1]:.2f} vs {bt.Persistence_MAE.iloc[-1]:.2f} at 12 months). "
+    f"Forecast uses NOAA data up to {nxt['last_observed_date']}.")
+
+# ════════════════════════════════════════════════════════
+# ALL-INDIA MONSOON PROBABILITIES
+# ════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown("### 🌧️ All-India Monsoon Rainfall Tilt")
+c1, c2 = st.columns(2)
+for col, title, d in [(c1, "Monsoon 2026 (season just ended)", O["h26"]),
+                      (c2, "Monsoon 2027 (outlook)", O["o27"])]:
+    with col:
+        st.markdown(f"**{title}**")
+        for k in ["Deficit", "Normal", "Excess"]:
+            st.progress(float(d["probabilities"][k]), text=f"{k}: {d['probabilities'][k] * 100:.0f}%")
+        st.caption("Confidence: LOW (each class is 33% by chance)")
+st.info(f"Model skill: balanced accuracy {info['cv_balanced_accuracy']:.2f} vs {info['chance']:.2f} by chance "
+        f"(permutation p = {info['permutation_p_value']}). Built from El Niño and IOD only, so read this as a "
+        "risk tilt, not a forecast. The 2027 tilt depends on the La Niña forecast above.")
 st.markdown("---")
 
 # ════════════════════════════════════════════════════════
 # STATE SELECTOR
 # ════════════════════════════════════════════════════════
 st.markdown("### 📍 What Does This Mean For YOUR State?")
-all_states = ["-- Select Your State --"] + sorted(state_risk["State"].unique())
-selected   = st.selectbox(
-    "Choose your state to get a personalized risk report:",
-    all_states, index=0)
+states = [""] + sorted(al.SUBDIVISION.unique())
+selected = st.selectbox("Choose your state to get a personalized risk report:", states, index=0,
+                        format_func=pretty)
 
-if selected == "-- Select Your State --":
-    hr = len(state_risk[state_risk["Risk_Level"]=="High Risk"])
-    mr = len(state_risk[state_risk["Risk_Level"]=="Moderate Risk"])
-    lr = len(state_risk[state_risk["Risk_Level"]=="Low Risk"])
-    st.markdown(
-        "<div class=\"info-box\"><b>👆 Select your state above</b> "
-        "to get your personalized monsoon and heatwave risk report, "
-        "with clear advice on what to do right now.</div>",
-        unsafe_allow_html=True)
-    st.markdown("**India Overview This Season:**")
-    c1,c2,c3 = st.columns(3)
-    c1.markdown(
-        f"<div class=\"risk-high\">🔴 {hr} States<br>"
-        f"<small>High Risk</small></div>",
-        unsafe_allow_html=True)
-    c2.markdown(
-        f"<div class=\"risk-moderate\">🟠 {mr} States<br>"
-        f"<small>Moderate Risk</small></div>",
-        unsafe_allow_html=True)
-    c3.markdown(
-        f"<div class=\"risk-low\">🟢 {lr} States<br>"
-        f"<small>Low Risk</small></div>",
-        unsafe_allow_html=True)
-
+if selected == "":
+    cnt = al.OUTLOOK_ALERT.value_counts()
+    st.markdown('<div class="info-box"><b>👆 Select your state above</b> to get its alerts, month-by-month '
+                'outlook and advice.</div>', unsafe_allow_html=True)
+    st.markdown("**India overview, outlook Nov 2026 to Aug 2027:**")
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f'<div class="risk-high">🔴 {cnt.get("Red", 0)} States<br><small>Red alert</small></div>',
+                unsafe_allow_html=True)
+    c2.markdown(f'<div class="risk-moderate">🟠 {cnt.get("Orange", 0)} States<br><small>Orange alert</small></div>',
+                unsafe_allow_html=True)
+    c3.markdown(f'<div class="risk-low">🟢 {cnt.get("Green", 0)} States<br><small>Green</small></div>',
+                unsafe_allow_html=True)
 else:
-    state_info  = state_risk[state_risk["State"]==selected].iloc[0]
-    state_lpa   = float(state_info["State_LPA"])
-    sensitivity = float(state_info["Sensitivity"])
-
-    oni_sc    = scaler.transform([[live_oni]])[0][0]
-    iod_sc_v  = iod_sc.transform([[live_iod]])[0][0]
-    rain_pred = xgb_rain.predict(
-        [[oni_sc,iod_sc_v,live_oni,live_iod,state_lpa]])[0]
-    rain_cls  = le_rain.inverse_transform([rain_pred])[0]
-    rain_prob = xgb_rain.predict_proba(
-        [[oni_sc,iod_sc_v,live_oni,live_iod,state_lpa]])[0]
-    heat_pred = xgb_heat.predict(
-        [[oni_sc,iod_sc_v,live_oni,live_iod]])[0]
-    heat_cls  = le_heat.inverse_transform([heat_pred])[0]
-
-    if live_oni>=0.5 and sensitivity<-0.3:
-        final_rain = "Deficit"
-    elif live_oni>=0.5 and sensitivity<-0.1:
-        final_rain = rain_cls
-    else:
-        final_rain = rain_cls
+    a = al[al.SUBDIVISION == selected].iloc[0]
+    sensitivity = float(sens[selected])
+    state_lpa = float(lpa[selected])
+    final_rain, has_signal, heat_cls = state_signals(selected)
+    p27 = O["o27"]["probabilities"]
+    top27 = max(p27, key=p27.get)
 
     # Risk banners
-    if final_rain=="Deficit":
-        r_emoji,r_text = "⚠️","BELOW NORMAL RAINFALL EXPECTED"
-        r_plain = "Less rain than usual this monsoon. Drought risk is real."
-        r_class = "risk-high"
-    elif final_rain=="Excess":
-        r_emoji,r_text = "🌊","ABOVE NORMAL RAINFALL EXPECTED"
-        r_plain = "More rain than usual. Flooding in low areas is possible."
-        r_class = "risk-moderate"
+    if final_rain == "Deficit":
+        r_emoji, r_text, r_class = "⚠️", "BELOW-NORMAL RAINFALL SIGNAL (Jun-Aug 2027)", "risk-high"
+        r_plain = "The ENSO/IOD signal for this state leans dry. Low confidence."
+    elif final_rain == "Excess":
+        r_emoji, r_text, r_class = "🌊", "ABOVE-NORMAL RAINFALL SIGNAL (Jun-Aug 2027)", "risk-moderate"
+        r_plain = "The ENSO/IOD signal for this state leans wet. Low confidence."
     else:
-        r_emoji,r_text = "✅","NORMAL RAINFALL EXPECTED"
-        r_plain = "Rainfall likely to be around the usual average. Good season."
-        r_class = "risk-low"
-
-    if heat_cls=="High":
-        h_emoji,h_text = "🔥","HIGH HEATWAVE RISK"
-        h_plain = "Severe heat likely. Protect yourself April-June."
-        h_class = "risk-high"
-    elif heat_cls=="Moderate":
-        h_emoji,h_text = "🌡️","MODERATE HEAT RISK"
-        h_plain = "Hotter than usual. Stay hydrated."
-        h_class = "risk-moderate"
+        r_emoji, r_text, r_class = "✅", "NO CLEAR RAINFALL SIGNAL (Jun-Aug 2027)", "risk-low"
+        r_plain = (f"ENSO/IOD give no reliable signal for this state. "
+                   f"All-India tilt: {top27} ({p27[top27] * 100:.0f}%).")
+    if heat_cls == "High":
+        h_emoji, h_text, h_class = "🔥", "HIGH HEATWAVE RISK (Mar-Jun 2027)", "risk-high"
+        h_plain = "Warm ENSO/IOD pattern in the hot season."
+    elif heat_cls == "Moderate":
+        h_emoji, h_text, h_class = "🌡️", "MODERATE HEAT RISK (Mar-Jun 2027)", "risk-moderate"
+        h_plain = "Somewhat higher heat risk. Stay hydrated."
     else:
-        h_emoji,h_text = "😊","LOW HEAT RISK"
-        h_plain = "Normal temperatures expected."
-        h_class = "risk-low"
+        h_emoji, h_text, h_class = "😊", "LOW HEAT RISK (Mar-Jun 2027)", "risk-low"
+        h_plain = "ENSO/IOD pattern does not favour extra heat. Local weather can still bring heatwaves."
 
-    st.markdown(f"## 📍 {selected} — Your Risk Report")
-    c1,c2 = st.columns(2)
-    with c1:
-        st.markdown(
-            f"<div class=\"{r_class}\">{r_emoji} {r_text}<br>"
-            f"<span style=\"font-size:0.9rem;font-weight:normal\">"
-            f"{r_plain}</span></div>",
-            unsafe_allow_html=True)
-    with c2:
-        st.markdown(
-            f"<div class=\"{h_class}\">{h_emoji} {h_text}<br>"
-            f"<span style=\"font-size:0.9rem;font-weight:normal\">"
-            f"{h_plain}</span></div>",
-            unsafe_allow_html=True)
+    st.markdown(f"## 📍 {pretty(selected)}: Your Risk Report")
+    c1, c2 = st.columns(2)
+    c1.markdown(f'<div class="{r_class}">{r_emoji} {r_text}<br><span style="font-size:0.9rem;'
+                f'font-weight:normal">{r_plain}</span></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="{h_class}">{h_emoji} {h_text}<br><span style="font-size:0.9rem;'
+                f'font-weight:normal">{h_plain}</span></div>', unsafe_allow_html=True)
 
-    st.markdown("")
+    # Alert panel
+    st.markdown("### 🚦 Alerts")
+    cols3 = st.columns(3)
+    for c, lab, key in [(cols3[0], "Next 3 months (Nov-Jan)", "NEXT3_ALERT"),
+                        (cols3[1], "Next 6 months (Nov-Apr)", "NEXT6_ALERT"),
+                        (cols3[2], "Outlook to Aug 2027", "OUTLOOK_ALERT")]:
+        c.markdown(f"<div style='background:{COL[a[key]]};color:white;padding:14px;border-radius:10px;"
+                   f"text-align:center'><b>{lab}</b><br>{a[key]}</div>", unsafe_allow_html=True)
+    if isinstance(a.FIRST_RED_MONTH, str) and a.FIRST_RED_MONTH:
+        st.error(f"First Red alert month: {a.FIRST_RED_MONTH}")
+    if a.OUTLOOK_ALERT != "Green":
+        st.write(f"Main driver: {a.MAIN_DRIVER}")
 
-    # Timeline for this state
-    st.markdown(f"### ⏱️ How Long Will This Affect {selected}?")
+    # Month-by-month
+    st.markdown("### 📅 Month-by-month forecast (Nov 2026 to Aug 2027)")
+    g = fm[fm.SUBDIVISION == selected][["MONTH", "Rainfall_Pred", "Rain_Confidence", "Heat_Risk", "Alert"]]
+    st.dataframe(g.style.apply(
+        lambda r: [f"background-color:{COL[r.Alert]};color:white" if c == "Alert" else "" for c in r.index],
+        axis=1), hide_index=True)
+    st.caption("Rain confidence 'Low' means no reliable ENSO/IOD signal for that state and month, so no "
+               "rainfall alert is raised. Months beyond about 6 are outlook only, because the ONI forecast "
+               "weakens with lead time.")
+
+    # Timeline
+    st.markdown(f"### ⏱️ How Long Will This Affect {pretty(selected)}?")
     st.markdown(
-        f"<div class=\"timeline-box\">"
-        f"<table width=\"100%\"><tr>"
-        f"<td width=\"33%\" style=\"text-align:center;padding:10px\">"
-        f"<div style=\"font-size:1.5rem\">🌊</div>"
-        f"<div style=\"font-weight:bold;color:#1B2A4A\">{phase_name} Started</div>"
-        f"<div style=\"color:#555;font-size:0.95rem\">{start_season}</div></td>"
-        f"<td width=\"33%\" style=\"text-align:center;padding:10px;"
-        f"border-left:2px dashed #CBD5E0;border-right:2px dashed #CBD5E0\">"
-        f"<div style=\"font-size:1.5rem\">📍</div>"
-        f"<div style=\"font-weight:bold;color:#1B2A4A\">Right Now</div>"
-        f"<div style=\"color:#555;font-size:0.95rem\">"
-        f"{live_season} {live_year} | ONI = {round(live_oni,2)}</div>"
-        f"<div style=\"color:#555;font-size:0.85rem\">"
-        f"Active for {months_active} months</div></td>"
-        f"<td width=\"33%\" style=\"text-align:center;padding:10px\">"
-        f"<div style=\"font-size:1.5rem\">🔚</div>"
-        f"<div style=\"font-weight:bold;color:#CC0000\">Expected End</div>"
-        f"<div style=\"color:#CC0000;font-size:0.9rem\">{est_end}</div></td>"
-        f"</tr></table>"
-        f"<div style=\"text-align:center;margin-top:6px;"
-        f"font-size:0.8rem;color:#888\">"
-        f"Historical average: El Nino lasts 9-12 months | "
-        f"Based on NOAA CPC data"
-        f"</div></div>",
+        f'<div class="timeline-box"><table width="100%"><tr>'
+        f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">🌊</div>'
+        f'<div style="font-weight:bold;color:#1B2A4A">{phase_name} Started</div>'
+        f'<div style="color:#555;font-size:0.95rem">{start_season}</div></td>'
+        f'<td width="33%" style="text-align:center;padding:10px;border-left:2px dashed #CBD5E0;'
+        f'border-right:2px dashed #CBD5E0"><div style="font-size:1.5rem">📍</div>'
+        f'<div style="font-weight:bold;color:#1B2A4A">Right Now</div>'
+        f'<div style="color:#555;font-size:0.95rem">{live_season} {live_year} | ONI = {live_oni:.2f}</div></td>'
+        f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">🔚</div>'
+        f'<div style="font-weight:bold;color:#CC0000">Expected End</div>'
+        f'<div style="color:#CC0000;font-size:0.9rem">{est_end}</div></td></tr></table></div>',
         unsafe_allow_html=True)
 
     # Actions
     st.markdown("---")
-    st.markdown(f"### ⚡ What Should You Do RIGHT NOW?")
-    st.markdown(
-        f"*Time-sensitive actions for {selected} based on "
-        f"current {phase_name} conditions*")
-
-    c1,c2,c3 = st.columns(3)
+    st.markdown("### ⚡ What Should You Do?")
+    st.markdown(f"*Actions for {pretty(selected)} based on the outlook above. These are precautions "
+                f"under uncertainty, not certain predictions.*")
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("#### 👨‍🌾 Farmers")
-        if final_rain=="Deficit":
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>🚨 Act Now — Drought Risk</b><br><br>"
-                "✅ Switch to drought-resistant crops<br>"
-                "&nbsp;&nbsp;&nbsp;(bajra, jowar, pulses)<br><br>"
-                "✅ Delay sowing by 2-3 weeks<br><br>"
-                "✅ Install drip irrigation<br><br>"
-                "✅ Apply for crop insurance now<br><br>"
-                "❌ Avoid water-heavy crops<br>"
-                "&nbsp;&nbsp;&nbsp;(sugarcane, rice in dry areas)"
-                "</div>",
-                unsafe_allow_html=True)
-        elif final_rain=="Excess":
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>🌊 Act Now — Flood Risk</b><br><br>"
-                "✅ Build drainage channels<br><br>"
-                "✅ Avoid low-lying fields<br><br>"
-                "✅ Stock fungicide for crops<br><br>"
-                "✅ Store seeds in dry place"
-                "</div>",
-                unsafe_allow_html=True)
+        if final_rain == "Deficit":
+            body = ("<b>🚨 Prepare for a dry monsoon</b><br><br>✅ Plan drought-resistant crops "
+                    "(bajra, jowar, pulses)<br><br>✅ Be ready to delay sowing<br><br>"
+                    "✅ Apply for crop insurance<br><br>❌ Avoid water-heavy crops where irrigation is weak")
+        elif final_rain == "Excess":
+            body = ("<b>🌊 Prepare for a wet monsoon</b><br><br>✅ Build drainage channels<br><br>"
+                    "✅ Avoid low-lying fields<br><br>✅ Stock fungicide<br><br>✅ Store seed in a dry place")
         else:
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>✅ Normal Season</b><br><br>"
-                "✅ Normal crop planning applies<br><br>"
-                "✅ Follow standard sowing calendar<br><br>"
-                "✅ Monitor weekly forecasts"
-                "</div>",
-                unsafe_allow_html=True)
-
+            body = ("<b>✅ No special signal</b><br><br>✅ Normal crop planning<br><br>"
+                    "✅ Follow the standard sowing calendar<br><br>✅ Check IMD forecasts before sowing")
+        st.markdown(f'<div class="action-box">{body}</div>', unsafe_allow_html=True)
     with c2:
         st.markdown("#### 💧 Water Managers")
-        if final_rain=="Deficit":
-            st.markdown(
-                f"<div class=\"action-box\">"
-                f"<b>🚨 Start Conservation Now</b><br><br>"
-                f"✅ Begin reservoir conservation<br><br>"
-                f"✅ Restrict non-essential water usage<br><br>"
-                f"✅ Plan rationing for summer<br><br>"
-                f"✅ Fix all leakages immediately<br><br>"
-                f"⏰ Plan until: {est_end}"
-                f"</div>",
-                unsafe_allow_html=True)
-        elif final_rain=="Excess":
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>🌊 High Water Incoming</b><br><br>"
-                "✅ Check dam overflow systems<br><br>"
-                "✅ Pre-position flood pumps<br><br>"
-                "✅ Alert downstream communities"
-                "</div>",
-                unsafe_allow_html=True)
+        if final_rain == "Deficit":
+            body = ("<b>🚨 Start conservation planning</b><br><br>✅ Conserve reservoir storage<br><br>"
+                    "✅ Restrict non-essential use<br><br>✅ Plan summer rationing<br><br>"
+                    f"⏰ Plan until: {est_end}")
+        elif final_rain == "Excess":
+            body = ("<b>🌊 Prepare for high inflows</b><br><br>✅ Check dam overflow systems<br><br>"
+                    "✅ Pre-position flood pumps<br><br>✅ Alert downstream communities")
         else:
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>✅ Normal Management</b><br><br>"
-                "✅ Standard reservoir operation<br><br>"
-                "✅ Normal distribution schedule<br><br>"
-                "✅ Routine maintenance now"
-                "</div>",
-                unsafe_allow_html=True)
-
+            body = ("<b>✅ Normal management</b><br><br>✅ Standard reservoir operation<br><br>"
+                    "✅ Routine maintenance now")
+        st.markdown(f'<div class="action-box">{body}</div>', unsafe_allow_html=True)
     with c3:
         st.markdown("#### 🚨 Disaster Management")
-        if heat_cls=="High":
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>🔥 High Heat — Act Now</b><br><br>"
-                "✅ Open cooling centers<br><br>"
-                "✅ Stock ORS and medicines<br><br>"
-                "✅ Issue public heat advisory<br><br>"
-                "✅ Restrict outdoor work 12pm-4pm<br><br>"
-                "✅ Check on elderly daily"
-                "</div>",
-                unsafe_allow_html=True)
-        elif heat_cls=="Moderate":
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>🟠 Moderate Heat — Stay Ready</b><br><br>"
-                "✅ Keep teams on standby<br><br>"
-                "✅ Issue early heat advisory<br><br>"
-                "✅ Ensure water supply<br><br>"
-                "✅ Monitor vulnerable groups"
-                "</div>",
-                unsafe_allow_html=True)
+        if heat_cls == "High":
+            body = ("<b>🔥 High heat risk: prepare early</b><br><br>✅ Plan cooling centers<br><br>"
+                    "✅ Stock ORS and medicines<br><br>✅ Prepare public heat advisories<br><br>"
+                    "✅ Restrict outdoor work 12pm-4pm in season")
+        elif heat_cls == "Moderate":
+            body = ("<b>🟠 Moderate heat risk: stay ready</b><br><br>✅ Keep teams on standby<br><br>"
+                    "✅ Prepare an early advisory<br><br>✅ Ensure water supply")
         else:
-            st.markdown(
-                "<div class=\"action-box\">"
-                "<b>✅ Standard Preparedness</b><br><br>"
-                "✅ Normal emergency planning<br><br>"
-                "✅ Routine monitoring"
-                "</div>",
-                unsafe_allow_html=True)
-        if final_rain=="Deficit":
-            st.markdown(
-                f"<div style=\"background:#FFE0E0;border-left:"
-                f"4px solid red;padding:10px;border-radius:5px;"
-                f"margin-top:8px\">"
-                f"🆘 Pre-position drought relief<br>"
-                f"📅 Plan resources until: {est_end}"
-                f"</div>",
-                unsafe_allow_html=True)
+            body = ("<b>✅ Standard preparedness</b><br><br>✅ Normal emergency planning<br><br>"
+                    "✅ Follow IMD heatwave warnings")
+        st.markdown(f'<div class="action-box">{body}</div>', unsafe_allow_html=True)
+        if final_rain == "Deficit":
+            st.markdown("<div style='background:#FFE0E0;border-left:4px solid red;padding:10px;"
+                        "border-radius:5px;margin-top:8px;color:#222'>🆘 Pre-position drought relief</div>",
+                        unsafe_allow_html=True)
 
-    # Early warning
     if abs(live_oni) >= 1.0:
         st.markdown("---")
-        st.error(
-            f"🚨 EXTREME EVENT WARNING | "
-            f"ONI = {round(live_oni,2)} — STRONG {phase_name} | "
-            f"Started: {start_season} | "
-            f"Expected end: {est_end} | "
-            f"Similar to 1997 and 2015 — act immediately for {selected}")
+        st.error(f"🚨 {phase_name} | ONI = {live_oni:.2f} | Started: {start_season} | "
+                 f"Expected end: {est_end}")
 
-    # Expandable sections
     st.markdown("---")
-    with st.expander(
-            "🔍 Why is this predicted? (Click to see explanation)"):
-        if live_oni >= 0.5:
-            st.markdown(
-                f"**El Nino** (ONI={round(live_oni,2)}) started {start_season} "
-                f"and has been active for {months_active} months. "
-                f"The Pacific Ocean is warmer than normal, which weakens "
-                f"India's monsoon circulation. "
-                f"**{selected}** has a historical El Nino sensitivity of "
-                f"{round(sensitivity,3)} — meaning in past El Nino years, "
-                f"this region has received "
-                f"{'less' if sensitivity<0 else 'more'} than normal rainfall. "
-                f"Our model predicts **{final_rain}** rainfall with "
-                f"{max(rain_prob)*100:.0f}% confidence. "
-                f"Similar past events: 1972 (ONI=0.81), 1997 (ONI=1.14), "
-                f"2002 (ONI=0.51), 2015 (ONI=1.48).")
-        else:
-            st.markdown(
-                f"Currently **{phase_name}** (ONI={round(live_oni,2)}). "
-                f"No strong ocean disruption active. "
-                f"Rainfall predicted as **{final_rain}** for {selected} "
-                f"with {max(rain_prob)*100:.0f}% confidence.")
+    with st.expander("🔍 Why is this predicted? (Click to see explanation)"):
+        st.markdown(
+            f"The Pacific is in **{phase_name}** (ONI = {live_oni:.2f}). Historically (1950-2024), "
+            f"**{pretty(selected)}** has an El Niño sensitivity of **{sensitivity:.2f}**: in warm-ONI years "
+            f"it received {'less' if sensitivity < 0 else 'more'} rain than usual. "
+            f"The forecast ONI falls through the El Niño threshold around "
+            f"{pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y') if nxt.get('current_event_expected_end') else 'N/A'} "
+            f"and turns La Niña by mid-2027, which is why the 2027 tilt is "
+            f"**{top27}** at the all-India level. State-level rainfall for each month comes from a regression "
+            f"of that month's IMD rainfall on ONI and IOD (1950-2015). Where that fit is weak the state is "
+            f"marked low confidence and gets no rainfall alert. "
+            f"Past years with a similar building El Niño: 1972, 1982, 2015 (Deficit) and 1997, 2023 (Normal).")
 
-    with st.expander(
-            "📊 Historical rainfall chart for "+selected+" (Click to expand)"):
-        sh = state_df[state_df["SUBDIVISION"]==selected].copy()
-        fig2,ax2 = plt.subplots(figsize=(14,5))
+    with st.expander(f"📊 Historical rainfall chart for {pretty(selected)}"):
+        sh = sad[sad.SUBDIVISION == selected].sort_values("YEAR")
+        fig2, ax2 = plt.subplots(figsize=(14, 5))
         fig2.patch.set_facecolor("#F8F9FA")
         ax2.set_facecolor("#F8F9FA")
-        cm = {"El_Nino":"#FF6B6B","La_Nina":"#4ECDC4","Neutral":"#95A5A6"}
-        bc = [cm.get(p,"#95A5A6") for p in sh["ENSO_Phase"]]
-        ax2.bar(sh["YEAR"],sh["ANNUAL"],color=bc,alpha=0.85,
-                edgecolor="white",linewidth=0.5)
-        ax2.axhline(state_lpa,color="#2C3E50",linestyle="--",linewidth=2,
-                    label=f"Average ({round(state_lpa,0):.0f} mm)")
-        ax2.set_title(
-            f"{selected} — Annual Rainfall 1950-2015\n"
-            f"Red = El Nino years | Blue = La Nina years | Gray = Normal",
-            fontweight="bold",color="#2C3E50")
+        cm = {"El_Nino": "#FF6B6B", "La_Nina": "#4ECDC4", "Neutral": "#95A5A6"}
+        ax2.bar(sh["YEAR"], sh["ANNUAL"], color=[cm.get(p, "#95A5A6") for p in sh["ENSO_Phase"]],
+                alpha=0.85, edgecolor="white", linewidth=0.5,
+                hatch=None)
+        era = sh[sh.SOURCE != "IMD"]
+        ax2.bar(era["YEAR"], era["ANNUAL"], color="none", edgecolor="black", hatch="//", linewidth=0.6)
+        ax2.axhline(state_lpa, color="#2C3E50", linestyle="--", linewidth=2,
+                    label=f"IMD average ({state_lpa:.0f} mm)")
+        ax2.set_title(f"{pretty(selected)}: Annual Rainfall 1950-2024\n"
+                      "Red = El Nino | Teal = La Nina | Gray = Neutral | Hatched = ERA5-derived (2016-2024)",
+                      fontweight="bold", color="#2C3E50")
         ax2.set_xlabel("Year")
         ax2.set_ylabel("Rainfall (mm)")
-        legend_e = [
-            mpatches.Patch(color="#FF6B6B",label="El Nino (less rain)"),
-            mpatches.Patch(color="#4ECDC4",label="La Nina (more rain)"),
-            mpatches.Patch(color="#95A5A6",label="Normal year"),
-        ]
-        handles,_ = ax2.get_legend_handles_labels()
-        ax2.legend(handles=legend_e+handles,fontsize=9)
+        legend_e = [mpatches.Patch(color="#FF6B6B", label="El Nino (less rain)"),
+                    mpatches.Patch(color="#4ECDC4", label="La Nina (more rain)"),
+                    mpatches.Patch(color="#95A5A6", label="Neutral"),
+                    mpatches.Patch(facecolor="white", edgecolor="black", hatch="//", label="ERA5-derived")]
+        handles, _ = ax2.get_legend_handles_labels()
+        ax2.legend(handles=legend_e + handles, fontsize=9)
         ax2.spines["top"].set_visible(False)
         ax2.spines["right"].set_visible(False)
         st.pyplot(fig2)
+        plt.close(fig2)
+        sh_el = sh[sh["ENSO_Phase"] == "El_Nino"][["YEAR", "ANNUAL", "SOURCE"]].copy()
+        sh_el["vs Average"] = ((sh_el["ANNUAL"] - state_lpa) / state_lpa * 100).round(1).astype(str) + "%"
+        sh_el["ANNUAL"] = sh_el["ANNUAL"].round(0)
+        sh_el.columns = ["Year", "Rainfall (mm)", "Source", "vs Average"]
+        st.dataframe(sh_el.set_index("Year"))
 
-        sh_el = sh[sh["ENSO_Phase"]=="El_Nino"][
-            ["YEAR","ANNUAL","IOD","Rainfall_Category","Heatwave_Risk"]
-        ].copy()
-        sh_el["vs Average"] = (
-            (sh_el["ANNUAL"]-state_lpa)/state_lpa*100
-        ).round(1).astype(str)+"%"
-        sh_el.columns = ["Year","Rainfall (mm)","IOD",
-                         "Category","Heatwave","vs Average"]
-        st.dataframe(sh_el.set_index("Year"),use_container_width=True)
-
-with st.expander("🗺️ All India Risk — All 36 States"):
-    disp = state_risk[["State","Base_Pred","Heatwave","Risk_Level"]].copy()
-    disp.columns = ["State","Rainfall Prediction","Heatwave Risk","Risk Level"]
-    st.dataframe(disp,use_container_width=True,height=300)
-    fig4,ax4 = plt.subplots(figsize=(12,8))
+# ════════════════════════════════════════════════════════
+# ALL-INDIA TABLE, VALIDATION
+# ════════════════════════════════════════════════════════
+with st.expander("🗺️ All India Alerts: All 36 Subdivisions"):
+    disp = al[["SUBDIVISION", "NEXT3_ALERT", "NEXT6_ALERT", "OUTLOOK_ALERT", "FIRST_RED_MONTH"]].copy()
+    disp["SUBDIVISION"] = disp["SUBDIVISION"].map(pretty)
+    disp.columns = ["State", "Next 3 months", "Next 6 months", "Outlook to Aug 2027", "First Red month"]
+    st.dataframe(disp.style.apply(
+        lambda r: [f"background-color:{COL[v]};color:white" if v in COL else "" for v in r], axis=1),
+        hide_index=True, height=300)
+    sr = pd.Series(sens).sort_values()
+    fig4, ax4 = plt.subplots(figsize=(12, 8))
     fig4.patch.set_facecolor("#F8F9FA")
     ax4.set_facecolor("#F8F9FA")
-    sr  = state_risk.sort_values("Sensitivity")
-    bc4 = ["#FF4444" if x<-0.3 else "#FF8C00" if x<-0.1 else "#28A745"
-            for x in sr["Sensitivity"]]
-    ax4.barh(sr["State"],sr["Sensitivity"],color=bc4,alpha=0.85)
-    ax4.axvline(0,color="black",linewidth=1.5)
-    ax4.set_title(
-        "El Nino Sensitivity — All Indian States\n"
-        "States on the LEFT are most affected by El Nino",
-        fontweight="bold",color="#2C3E50")
-    ax4.set_xlabel("← More affected by El Nino | Less affected →")
+    ax4.barh([pretty(s) for s in sr.index], sr.values,
+             color=["#FF4444" if x < -0.3 else "#FF8C00" if x < -0.1 else "#28A745" for x in sr.values],
+             alpha=0.85)
+    ax4.axvline(0, color="black", linewidth=1.5)
+    ax4.set_title("El Nino Sensitivity (1950-2024): states on the LEFT lose most rain in El Nino years",
+                  fontweight="bold", color="#2C3E50")
+    ax4.set_xlabel("Correlation of annual ONI with annual rainfall")
     ax4.spines["top"].set_visible(False)
     ax4.spines["right"].set_visible(False)
-    rp = mpatches.Patch(color="#FF4444",label="High Risk")
-    op = mpatches.Patch(color="#FF8C00",label="Moderate Risk")
-    gp = mpatches.Patch(color="#28A745",label="Low Risk")
-    ax4.legend(handles=[rp,op,gp])
+    ax4.legend(handles=[mpatches.Patch(color="#FF4444", label="Strongly affected"),
+                        mpatches.Patch(color="#FF8C00", label="Moderately affected"),
+                        mpatches.Patch(color="#28A745", label="Weak / opposite")])
     plt.tight_layout()
     st.pyplot(fig4)
+    plt.close(fig4)
+
+with st.expander("✅ Model validation and limitations"):
+    st.markdown("**All-India monsoon class (terciles), 5-fold cross-validation repeated 10 times:**")
+    cmp = O["cmp"].copy()
+    st.dataframe(cmp.round(3), hide_index=True)
+    st.markdown(
+        f"- The best model reaches balanced accuracy **{info['cv_balanced_accuracy']:.2f}** against "
+        f"**{info['chance']:.2f}** by chance (permutation p = {info['permutation_p_value']}), so skill is "
+        "modest and only marginally significant.\n"
+        "- Heatwave risk is a rule on ONI + 0.5×IOD, so the model's high score only shows it learned the rule. "
+        "It is a climate-signal indicator, not a weather forecast.\n"
+        "- Rainfall for 2016-2024 comes from ERA5 calibrated to IMD, which smooths extremes.")
+    cal = O["cal"]
+    weak = cal[cal["corr"] < 0.5].SUBDIVISION.map(pretty).tolist()
+    st.markdown(f"**ERA5 vs IMD correlation (1991-2015), median {cal['corr'].median():.2f}.** "
+                f"Weaker (<0.5) in: {', '.join(weak) if weak else 'none'}.")
+    st.markdown(f"**ONI forecast error by lead (backtest, lower is better):**")
+    st.dataframe(bt.round(3), hide_index=True)
+
+st.caption(f"Forecast files built from NOAA data up to {nxt['last_observed_date']}. "
+           "Status and timeline above refresh daily from NOAA; forecasts update when the Colab notebook is re-run.")

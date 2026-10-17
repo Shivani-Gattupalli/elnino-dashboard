@@ -1,0 +1,30 @@
+{
+  "tercile_cutoffs_mm": [
+    1355.2693221410236,
+    1468.2796569893474
+  ],
+  "features": [
+    "ONI_DJF",
+    "ONI_MAM",
+    "ONI_MJJ",
+    "ONI_TREND",
+    "IOD_MJ"
+  ],
+  "classes": [
+    "Deficit",
+    "Excess",
+    "Normal"
+  ],
+  "cv_balanced_accuracy": 0.433,
+  "chance": 0.333,
+  "permutation_p_value": 0.0858,
+  "note": "Modest skill from ENSO+IOD only; present as probabilistic advisory.",
+  "probability_trust_weight": 0.6900000000000001,
+  "dataset_years": [
+    1950,
+    2024
+  ],
+  "rain_classes": "terciles of all-India annual rainfall (driest third = Deficit)",
+  "heatwave_note": "Label is a rule (ONI + 0.5*IOD), so its ~98% only shows the model learned the rule.",
+  "era5_median_corr_vs_imd": 0.678
+}
