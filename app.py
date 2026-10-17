@@ -50,15 +50,28 @@ def load_outputs():
         al=pd.read_csv("alerts.csv"),
         fo=pd.read_csv("oni_forecast.csv", parse_dates=["DATE"]),
         nxt=json.load(open("next_elnino.json")),
-        o27=json.load(open("rain_outlook_2027.json")),
-        h26=json.load(open("rain_2026_hindcast.json")),
-        info=json.load(open("model_info.json")),
     )
 
 
 O = load_outputs()
 master_df, sa, fm, al, fo = O["master"], O["sa"], O["fm"], O["al"], O["fo"]
-nxt, info = O["nxt"], O["info"]
+nxt = O["nxt"]
+
+
+SEAS_TXT = {"DJF": "Dec-Feb", "JFM": "Jan-Mar", "FMA": "Feb-Apr", "MAM": "Mar-May", "AMJ": "Apr-Jun",
+            "MJJ": "May-Jul", "JJA": "Jun-Aug", "JAS": "Jul-Sep", "ASO": "Aug-Oct", "SON": "Sep-Nov",
+            "OND": "Oct-Dec", "NDJ": "Nov-Jan"}
+SEAS_MID = {"DJF": 1, "JFM": 2, "FMA": 3, "MAM": 4, "AMJ": 5, "MJJ": 6, "JJA": 7, "JAS": 8, "ASO": 9,
+            "SON": 10, "OND": 11, "NDJ": 12}
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def season_text(code, yr):
+    return f"{SEAS_TXT.get(code, code)} {yr}"
+
+
+def season_short(code, yr):
+    return f"{MONTHS[SEAS_MID[code] - 1]} {str(yr)[2:]}"
 
 
 @st.cache_data(ttl=86400)
@@ -78,7 +91,7 @@ def get_live():
                 n += 1
                 i -= 1
             s = len(vals) - n
-            start = f"{df['SEAS'].iloc[s]} {int(df['YR'].iloc[s])}"
+            start = season_text(str(df["SEAS"].iloc[s]), int(df["YR"].iloc[s]))
         return dict(ok=True, oni=last, season=str(df["SEAS"].iloc[-1]), year=int(df["YR"].iloc[-1]),
                     recent=df.tail(12).reset_index(drop=True), start=start, n=n)
     except Exception:
@@ -106,12 +119,14 @@ def get_live_iod():
 
 live = get_live()
 if live["ok"]:
-    live_oni, live_season, live_year = live["oni"], live["season"], live["year"]
+    live_oni, live_year = live["oni"], live["year"]
+    live_season = season_text(live["season"], live["year"])
     recent_oni, start_season, months_active = live["recent"], live["start"], live["n"]
     live_note = "Live from NOAA CPC"
 else:                                                         # fall back to the last saved snapshot, and say so
-    live_oni, live_season = float(nxt["last_observed_oni"]), "latest"
+    live_oni, live_season = float(nxt["last_observed_oni"]), None
     live_year = int(str(nxt["last_observed_date"])[:4])
+    live_season = pd.to_datetime(nxt["last_observed_date"]).strftime("%B %Y")
     recent_oni, start_season, months_active = None, None, 0
     live_note = f"NOAA unreachable, showing saved snapshot ({nxt['last_observed_date']})"
 
@@ -136,6 +151,8 @@ else:
     phase_name, phase_emoji = "Normal Conditions", "🟢"
     phase_plain = "Ocean temperatures are near normal. No major ENSO disruption expected."
 
+months_text = f"About {months_active + 2} months" if months_active > 0 else "Not active"
+
 # Start / end of the event
 if start_season is None:
     start_season = "Not applicable (no active event)" if abs(live_oni) < 0.5 else "Unavailable (offline)"
@@ -143,7 +160,7 @@ if abs(live_oni) < 0.5:
     est_end = "No active event"
 elif live_oni >= 0.5 and nxt.get("currently_el_nino") and nxt.get("current_event_expected_end"):
     est_end = (f"Around {pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y')} "
-               "(LSTM forecast, low confidence)")
+               "(forecast, low confidence)")
 else:
     est_end = "Not available in the latest forecast"
 
@@ -179,8 +196,6 @@ def state_signals(sub):
 # TITLE
 # ════════════════════════════════════════════════════════
 st.markdown('<div class="main-title">🌧️ India Monsoon & Heatwave Risk Predictor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">El Niño + Indian Ocean Dipole → 12-month outlook → '
-            'State alerts → What to do</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # ════════════════════════════════════════════════════════
@@ -203,12 +218,12 @@ with col2:
         f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">📅 WHEN DID IT START?</span><br>'
         f'<b style="color:#1B2A4A">{start_season}</b></td></tr>'
         f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">⏳ HOW LONG ACTIVE?</span><br>'
-        f'<b style="color:#1B2A4A">{months_active} overlapping 3-month seasons</b></td></tr>'
+        f'<b style="color:#1B2A4A">{months_text}</b></td></tr>'
         f'<tr><td style="padding:8px"><span style="font-size:0.85rem;color:#666">🔚 WHEN WILL IT END?</span><br>'
         f'<b style="color:#CC0000">{est_end}</b></td></tr></table></div>', unsafe_allow_html=True)
 
-# ONI: last 12 observed seasons + LSTM forecast
-st.markdown("#### 📈 Ocean Temperature: observed (NOAA) and 12-month forecast (LSTM)")
+# ONI: last 12 observed seasons + 12-month forecast
+st.markdown("#### 📈 Ocean Temperature: observed (NOAA) and 12-month forecast")
 fig_t, ax_t = plt.subplots(figsize=(12, 3.4))
 fig_t.patch.set_facecolor("#F8F9FA")
 ax_t.set_facecolor("#F8F9FA")
@@ -216,7 +231,7 @@ labels, vals, cols_, alphas = [], [], [], []
 if recent_oni is not None:
     for _, r in recent_oni.iterrows():
         v = float(r["ANOM"])
-        labels.append(f"{r['SEAS']} {int(r['YR'])}")
+        labels.append(season_short(str(r["SEAS"]), int(r["YR"])))
         vals.append(v)
         cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
         alphas.append(0.9)
@@ -246,22 +261,7 @@ plt.close(fig_t)
 
 if nxt.get("next_el_nino_onset"):
     st.info(f"New El Niño forecast to start: {nxt['next_el_nino_onset']}")
-st.caption("Faded bars = LSTM forecast. Confidence drops beyond about 6 months.")
-
-# ════════════════════════════════════════════════════════
-# ALL-INDIA MONSOON PROBABILITIES
-# ════════════════════════════════════════════════════════
-st.markdown("---")
-st.markdown("### 🌧️ All-India Monsoon Rainfall Tilt")
-c1, c2 = st.columns(2)
-for col, title, d in [(c1, "Monsoon 2026 (season just ended)", O["h26"]),
-                      (c2, "Monsoon 2027 (outlook)", O["o27"])]:
-    with col:
-        st.markdown(f"**{title}**")
-        for k in ["Deficit", "Normal", "Excess"]:
-            st.progress(float(d["probabilities"][k]), text=f"{k}: {d['probabilities'][k] * 100:.0f}%")
-        st.caption("Confidence: LOW (each class is 33% by chance)")
-st.markdown("---")
+st.caption("Faded bars = forecast. Confidence drops beyond about 6 months.")
 
 # ════════════════════════════════════════════════════════
 # STATE SELECTOR
@@ -288,8 +288,6 @@ else:
     sensitivity = float(sens[selected])
     state_lpa = float(lpa[selected])
     final_rain, has_signal, heat_cls = state_signals(selected)
-    p27 = O["o27"]["probabilities"]
-    top27 = max(p27, key=p27.get)
 
     # Risk banners
     if final_rain == "Deficit":
@@ -300,8 +298,7 @@ else:
         r_plain = "The ENSO/IOD signal for this state leans wet. Low confidence."
     else:
         r_emoji, r_text, r_class = "✅", "NO CLEAR RAINFALL SIGNAL (Jun-Aug 2027)", "risk-low"
-        r_plain = (f"ENSO/IOD give no reliable signal for this state. "
-                   f"All-India tilt: {top27} ({p27[top27] * 100:.0f}%).")
+        r_plain = "No reliable ocean-based signal for this state. Follow normal planning."
     if heat_cls == "High":
         h_emoji, h_text, h_class = "🔥", "HIGH HEATWAVE RISK (Mar-Jun 2027)", "risk-high"
         h_plain = "Warm ENSO/IOD pattern in the hot season."
@@ -350,7 +347,7 @@ else:
         f'<td width="33%" style="text-align:center;padding:10px;border-left:2px dashed #CBD5E0;'
         f'border-right:2px dashed #CBD5E0"><div style="font-size:1.5rem">📍</div>'
         f'<div style="font-weight:bold;color:#1B2A4A">Right Now</div>'
-        f'<div style="color:#555;font-size:0.95rem">{live_season} {live_year} | ONI = {live_oni:.2f}</div></td>'
+        f'<div style="color:#555;font-size:0.95rem">{live_season} | ONI = {live_oni:.2f}</div></td>'
         f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">🔚</div>'
         f'<div style="font-weight:bold;color:#CC0000">Expected End</div>'
         f'<div style="color:#CC0000;font-size:0.9rem">{est_end}</div></td></tr></table></div>',
@@ -419,10 +416,9 @@ else:
             f"it received {'less' if sensitivity < 0 else 'more'} rain than usual. "
             f"The forecast ONI falls through the El Niño threshold around "
             f"{pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y') if nxt.get('current_event_expected_end') else 'N/A'} "
-            f"and turns La Niña by mid-2027, which is why the 2027 tilt is "
-            f"**{top27}** at the all-India level. State-level rainfall for each month comes from a regression "
-            f"of that month's IMD rainfall on ONI and IOD (1950-2015). Where that fit is weak the state is "
-            f"marked low confidence and gets no rainfall alert. "
+            f"and turns La Niña by mid-2027. Month-wise rainfall for each state is estimated from how "
+            f"that month's rainfall behaved in past El Niño and La Niña years (1950-2015). Where that link "
+            f"is weak the state is marked low confidence and gets no rainfall alert. "
             f"Past years with a similar building El Niño: 1972, 1982, 2015 (Deficit) and 1997, 2023 (Normal).")
 
     with st.expander(f"📊 Historical rainfall chart for {pretty(selected)}"):
