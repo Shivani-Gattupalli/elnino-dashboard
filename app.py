@@ -247,12 +247,24 @@ n_obs = len(labels) - len(fo)
 if n_obs > 0:
     ax_t.axvline(n_obs - 0.5, color="black", linestyle=":", linewidth=1)
     ax_t.text(n_obs - 0.4, ax_t.get_ylim()[1] * 0.9, "forecast →", fontsize=8)
+# Shade the El Nino period that contains the latest observation (start -> forecast end)
+if n_obs > 0 and vals[n_obs - 1] >= 0.5:
+    i0 = n_obs - 1
+    while i0 > 0 and vals[i0 - 1] >= 0.5:
+        i0 -= 1
+    i1 = n_obs - 1
+    while i1 < len(vals) - 1 and vals[i1 + 1] >= 0.5:
+        i1 += 1
+    ax_t.axvspan(i0 - 0.5, i1 + 0.5, color="#FF4444", alpha=0.08)
+    ax_t.text((i0 + i1) / 2, max(vals) * 1.08, "El Niño period", ha="center", fontsize=10,
+              fontweight="bold", color="#CC0000")
+    ax_t.set_ylim(min(vals) * 1.15, max(vals) * 1.22)
 ax_t.axhline(0.5, color="#FF4444", linestyle="--", linewidth=1.2, label="El Nino (+0.5)")
 ax_t.axhline(-0.5, color="#4444FF", linestyle="--", linewidth=1.2, label="La Nina (-0.5)")
 ax_t.axhline(0, color="black", linewidth=0.5)
 ax_t.set_xticks(range(len(labels)))
 ax_t.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
-ax_t.set_ylabel("ONI")
+ax_t.set_ylabel("Ocean temperature vs normal (°C)", fontsize=9)
 ax_t.legend(fontsize=8, loc="lower left")
 ax_t.spines["top"].set_visible(False)
 ax_t.spines["right"].set_visible(False)
