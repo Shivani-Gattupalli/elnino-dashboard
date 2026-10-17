@@ -223,57 +223,57 @@ with col2:
         f'<b style="color:#CC0000">{est_end}</b></td></tr></table></div>', unsafe_allow_html=True)
 
 # ONI: last 12 observed seasons + 12-month forecast
-st.markdown("#### 📈 Ocean Temperature: observed (NOAA) and 12-month forecast")
-fig_t, ax_t = plt.subplots(figsize=(12, 3.4))
-fig_t.patch.set_facecolor("#F8F9FA")
-ax_t.set_facecolor("#F8F9FA")
-labels, vals, cols_, alphas = [], [], [], []
-if recent_oni is not None:
-    for _, r in recent_oni.iterrows():
-        v = float(r["ANOM"])
-        labels.append(season_short(str(r["SEAS"]), int(r["YR"])))
+with st.expander("📈 See the ocean temperature chart and 12-month forecast"):
+    fig_t, ax_t = plt.subplots(figsize=(12, 3.4))
+    fig_t.patch.set_facecolor("#F8F9FA")
+    ax_t.set_facecolor("#F8F9FA")
+    labels, vals, cols_, alphas = [], [], [], []
+    if recent_oni is not None:
+        for _, r in recent_oni.iterrows():
+            v = float(r["ANOM"])
+            labels.append(season_short(str(r["SEAS"]), int(r["YR"])))
+            vals.append(v)
+            cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
+            alphas.append(0.9)
+    for _, r in fo.iterrows():
+        v = float(r["ONI_forecast"])
+        labels.append(r["DATE"].strftime("%b %y"))
         vals.append(v)
         cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
-        alphas.append(0.9)
-for _, r in fo.iterrows():
-    v = float(r["ONI_forecast"])
-    labels.append(r["DATE"].strftime("%b %y"))
-    vals.append(v)
-    cols_.append("#FF4444" if v >= 0.5 else "#4444FF" if v <= -0.5 else "#888888")
-    alphas.append(0.45)
-for i, (v, c, a) in enumerate(zip(vals, cols_, alphas)):
-    ax_t.bar(i, v, color=c, alpha=a, edgecolor="white")
-n_obs = len(labels) - len(fo)
-if n_obs > 0:
-    ax_t.axvline(n_obs - 0.5, color="black", linestyle=":", linewidth=1)
-    ax_t.text(n_obs - 0.4, ax_t.get_ylim()[1] * 0.9, "forecast →", fontsize=8)
-# Shade the El Nino period that contains the latest observation (start -> forecast end)
-if n_obs > 0 and vals[n_obs - 1] >= 0.5:
-    i0 = n_obs - 1
-    while i0 > 0 and vals[i0 - 1] >= 0.5:
-        i0 -= 1
-    i1 = n_obs - 1
-    while i1 < len(vals) - 1 and vals[i1 + 1] >= 0.5:
-        i1 += 1
-    ax_t.axvspan(i0 - 0.5, i1 + 0.5, color="#FF4444", alpha=0.08)
-    ax_t.text((i0 + i1) / 2, max(vals) * 1.08, "El Niño period", ha="center", fontsize=10,
-              fontweight="bold", color="#CC0000")
-    ax_t.set_ylim(min(vals) * 1.15, max(vals) * 1.22)
-ax_t.axhline(0.5, color="#FF4444", linestyle="--", linewidth=1.2, label="El Nino (+0.5)")
-ax_t.axhline(-0.5, color="#4444FF", linestyle="--", linewidth=1.2, label="La Nina (-0.5)")
-ax_t.axhline(0, color="black", linewidth=0.5)
-ax_t.set_xticks(range(len(labels)))
-ax_t.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
-ax_t.set_ylabel("Ocean temperature vs normal (°C)", fontsize=9)
-ax_t.legend(fontsize=8, loc="lower left")
-ax_t.spines["top"].set_visible(False)
-ax_t.spines["right"].set_visible(False)
-st.pyplot(fig_t)
-plt.close(fig_t)
+        alphas.append(0.45)
+    for i, (v, c, a) in enumerate(zip(vals, cols_, alphas)):
+        ax_t.bar(i, v, color=c, alpha=a, edgecolor="white")
+    n_obs = len(labels) - len(fo)
+    if n_obs > 0:
+        ax_t.axvline(n_obs - 0.5, color="black", linestyle=":", linewidth=1)
+        ax_t.text(n_obs - 0.4, ax_t.get_ylim()[1] * 0.9, "forecast →", fontsize=8)
+    # Shade the El Nino period that contains the latest observation (start -> forecast end)
+    if n_obs > 0 and vals[n_obs - 1] >= 0.5:
+        i0 = n_obs - 1
+        while i0 > 0 and vals[i0 - 1] >= 0.5:
+            i0 -= 1
+        i1 = n_obs - 1
+        while i1 < len(vals) - 1 and vals[i1 + 1] >= 0.5:
+            i1 += 1
+        ax_t.axvspan(i0 - 0.5, i1 + 0.5, color="#FF4444", alpha=0.08)
+        ax_t.text((i0 + i1) / 2, max(vals) * 1.08, "El Niño period", ha="center", fontsize=10,
+                  fontweight="bold", color="#CC0000")
+        ax_t.set_ylim(min(vals) * 1.15, max(vals) * 1.22)
+    ax_t.axhline(0.5, color="#FF4444", linestyle="--", linewidth=1.2, label="El Nino (+0.5)")
+    ax_t.axhline(-0.5, color="#4444FF", linestyle="--", linewidth=1.2, label="La Nina (-0.5)")
+    ax_t.axhline(0, color="black", linewidth=0.5)
+    ax_t.set_xticks(range(len(labels)))
+    ax_t.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
+    ax_t.set_ylabel("Ocean temperature vs normal (°C)", fontsize=9)
+    ax_t.legend(fontsize=8, loc="lower left")
+    ax_t.spines["top"].set_visible(False)
+    ax_t.spines["right"].set_visible(False)
+    st.pyplot(fig_t)
+    plt.close(fig_t)
 
-if nxt.get("next_el_nino_onset"):
-    st.info(f"New El Niño forecast to start: {nxt['next_el_nino_onset']}")
-st.caption("Faded bars = forecast. Confidence drops beyond about 6 months.")
+    if nxt.get("next_el_nino_onset"):
+        st.info(f"New El Niño forecast to start: {nxt['next_el_nino_onset']}")
+    st.caption("Faded bars = forecast. Confidence drops beyond about 6 months.")
 
 # ════════════════════════════════════════════════════════
 # STATE SELECTOR
