@@ -53,9 +53,6 @@ def load_outputs():
         o27=json.load(open("rain_outlook_2027.json")),
         h26=json.load(open("rain_2026_hindcast.json")),
         info=json.load(open("model_info.json")),
-        cmp=pd.read_csv("model_comparison_terciles.csv"),
-        bt=pd.read_csv("oni_backtest.csv"),
-        cal=pd.read_csv("era5_calibration.csv"),
     )
 
 
@@ -249,14 +246,7 @@ plt.close(fig_t)
 
 if nxt.get("next_el_nino_onset"):
     st.info(f"New El Niño forecast to start: {nxt['next_el_nino_onset']}")
-else:
-    st.success("No new El Niño onset forecast within the 12-month window.")
-bt = O["bt"]
-st.caption(
-    f"{nxt['note']} In a 5-year backtest the LSTM beat the 'stays the same' baseline at every lead "
-    f"(error {bt.LSTM_MAE.iloc[0]:.2f} vs {bt.Persistence_MAE.iloc[0]:.2f} at 1 month, "
-    f"{bt.LSTM_MAE.iloc[-1]:.2f} vs {bt.Persistence_MAE.iloc[-1]:.2f} at 12 months). "
-    f"Forecast uses NOAA data up to {nxt['last_observed_date']}.")
+st.caption("Faded bars = LSTM forecast. Confidence drops beyond about 6 months.")
 
 # ════════════════════════════════════════════════════════
 # ALL-INDIA MONSOON PROBABILITIES
@@ -271,9 +261,6 @@ for col, title, d in [(c1, "Monsoon 2026 (season just ended)", O["h26"]),
         for k in ["Deficit", "Normal", "Excess"]:
             st.progress(float(d["probabilities"][k]), text=f"{k}: {d['probabilities'][k] * 100:.0f}%")
         st.caption("Confidence: LOW (each class is 33% by chance)")
-st.info(f"Model skill: balanced accuracy {info['cv_balanced_accuracy']:.2f} vs {info['chance']:.2f} by chance "
-        f"(permutation p = {info['permutation_p_value']}). Built from El Niño and IOD only, so read this as a "
-        "risk tilt, not a forecast. The 2027 tilt depends on the La Niña forecast above.")
 st.markdown("---")
 
 # ════════════════════════════════════════════════════════
@@ -351,9 +338,7 @@ else:
     st.dataframe(g.style.apply(
         lambda r: [f"background-color:{COL[r.Alert]};color:white" if c == "Alert" else "" for c in r.index],
         axis=1), hide_index=True)
-    st.caption("Rain confidence 'Low' means no reliable ENSO/IOD signal for that state and month, so no "
-               "rainfall alert is raised. Months beyond about 6 are outlook only, because the ONI forecast "
-               "weakens with lead time.")
+    st.caption("Months beyond about 6 are outlook only.")
 
     # Timeline
     st.markdown(f"### ⏱️ How Long Will This Affect {pretty(selected)}?")
@@ -503,24 +488,3 @@ with st.expander("🗺️ All India Alerts: All 36 Subdivisions"):
     plt.tight_layout()
     st.pyplot(fig4)
     plt.close(fig4)
-
-with st.expander("✅ Model validation and limitations"):
-    st.markdown("**All-India monsoon class (terciles), 5-fold cross-validation repeated 10 times:**")
-    cmp = O["cmp"].copy()
-    st.dataframe(cmp.round(3), hide_index=True)
-    st.markdown(
-        f"- The best model reaches balanced accuracy **{info['cv_balanced_accuracy']:.2f}** against "
-        f"**{info['chance']:.2f}** by chance (permutation p = {info['permutation_p_value']}), so skill is "
-        "modest and only marginally significant.\n"
-        "- Heatwave risk is a rule on ONI + 0.5×IOD, so the model's high score only shows it learned the rule. "
-        "It is a climate-signal indicator, not a weather forecast.\n"
-        "- Rainfall for 2016-2024 comes from ERA5 calibrated to IMD, which smooths extremes.")
-    cal = O["cal"]
-    weak = cal[cal["corr"] < 0.5].SUBDIVISION.map(pretty).tolist()
-    st.markdown(f"**ERA5 vs IMD correlation (1991-2015), median {cal['corr'].median():.2f}.** "
-                f"Weaker (<0.5) in: {', '.join(weak) if weak else 'none'}.")
-    st.markdown(f"**ONI forecast error by lead (backtest, lower is better):**")
-    st.dataframe(bt.round(3), hide_index=True)
-
-st.caption(f"Forecast files built from NOAA data up to {nxt['last_observed_date']}. "
-           "Status and timeline above refresh daily from NOAA; forecasts update when the Colab notebook is re-run.")
