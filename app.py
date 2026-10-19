@@ -188,6 +188,17 @@ WIN_6 = f"{_mname(_mths[0])} to {_mname(_mths[min(5, len(_mths) - 1)])}"
 OUTLOOK_END = _mname(_mths[-1])
 
 
+LEGEND_HTML = (
+    "<div style='margin:8px 0 14px 0;color:#222'><b>What the colours mean</b><br>"
+    "<span style='background:#27ae60;color:white;padding:3px 10px;border-radius:6px'>Green</span> "
+    "No unusual risk expected. Plan as normal.<br>"
+    "<span style='background:#f39c12;color:white;padding:3px 10px;border-radius:6px'>Orange</span> "
+    "Watch out. A higher chance of a dry or wet spell, or of extra heat. Start preparing.<br>"
+    "<span style='background:#e74c3c;color:white;padding:3px 10px;border-radius:6px'>Red</span> "
+    "Serious risk. Act early.</div>")
+RAIN_TXT = {"Deficit": "Below normal", "Normal": "Normal", "Excess": "Above normal"}
+
+
 def state_signals(sub):
     """Monsoon-2027 rainfall signal and hot-season (Mar-Jun 2027) heat risk for one subdivision."""
     g = fm[fm.SUBDIVISION == sub]
@@ -205,11 +216,6 @@ def state_signals(sub):
 # ════════════════════════════════════════════════════════
 st.markdown('<div class="main-title">🌧️ India Monsoon & Heatwave Risk Predictor</div>', unsafe_allow_html=True)
 st.markdown("---")
-
-_age = (pd.Timestamp.today() - pd.to_datetime(nxt["last_observed_date"])).days
-if _age > 75:
-    st.warning(f"The forecasts below were built from ocean data up to {nxt['last_observed_date']} "
-               f"({_age} days ago) and may be out of date. The ocean status card is still live.")
 
 # ════════════════════════════════════════════════════════
 # OCEAN STATUS
@@ -308,6 +314,7 @@ if selected == "":
                 unsafe_allow_html=True)
     c3.markdown(f'<div class="risk-low">🟢 {cnt.get("Green", 0)} States<br><small>Green</small></div>',
                 unsafe_allow_html=True)
+    st.markdown(LEGEND_HTML, unsafe_allow_html=True)
 else:
     a = al[al.SUBDIVISION == selected].iloc[0]
     sensitivity = float(sens[selected])
@@ -349,6 +356,7 @@ else:
                         (cols3[2], f"Outlook to {OUTLOOK_END}", "OUTLOOK_ALERT")]:
         c.markdown(f"<div style='background:{COL[a[key]]};color:white;padding:14px;border-radius:10px;"
                    f"text-align:center'><b>{lab}</b><br>{a[key]}</div>", unsafe_allow_html=True)
+    st.markdown(LEGEND_HTML, unsafe_allow_html=True)
     if isinstance(a.FIRST_RED_MONTH, str) and a.FIRST_RED_MONTH:
         st.error(f"First Red alert month: {a.FIRST_RED_MONTH}")
     if a.OUTLOOK_ALERT != "Green":
@@ -356,11 +364,14 @@ else:
 
     # Month-by-month
     st.markdown(f"### 📅 Month-by-month forecast ({WIN_ALL})")
-    g = fm[fm.SUBDIVISION == selected][["MONTH", "Rainfall_Pred", "Rain_Confidence", "Heat_Risk", "Alert"]]
+    g = fm[fm.SUBDIVISION == selected][["MONTH", "Rainfall_Pred", "Rain_Confidence", "Heat_Risk", "Alert"]].copy()
+    g["MONTH"] = g["MONTH"].map(_mname)
+    g["Rainfall_Pred"] = g["Rainfall_Pred"].map(RAIN_TXT)
+    g.columns = ["Month", "Rainfall", "Confidence", "Heat risk", "Alert"]
     st.dataframe(g.style.apply(
-        lambda r: [f"background-color:{COL[r.Alert]};color:white" if c == "Alert" else "" for c in r.index],
+        lambda r: [f"background-color:{COL[r['Alert']]};color:white" if c == "Alert" else "" for c in r.index],
         axis=1), hide_index=True)
-    st.caption("Months beyond about 6 are outlook only.")
+    st.caption("Confidence shows how reliable the ocean signal is for that month. Months far ahead are less certain.")
 
     # Timeline
     st.markdown(f"### ⏱️ How Long Will This Affect {pretty(selected)}?")
