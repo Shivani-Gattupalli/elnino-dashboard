@@ -324,13 +324,13 @@ else:
     # Risk banners
     if final_rain == "Deficit":
         r_emoji, r_text, r_class = "⚠️", "BELOW-NORMAL RAINFALL SIGNAL (Jun-Aug 2027)", "risk-high"
-        r_plain = "The ENSO/IOD signal for this state leans dry. Low confidence."
+        r_plain = "Ocean patterns lean towards a drier monsoon for this state."
     elif final_rain == "Excess":
         r_emoji, r_text, r_class = "🌊", "ABOVE-NORMAL RAINFALL SIGNAL (Jun-Aug 2027)", "risk-moderate"
-        r_plain = "The ENSO/IOD signal for this state leans wet. Low confidence."
+        r_plain = "Ocean patterns lean towards a wetter monsoon for this state."
     else:
-        r_emoji, r_text, r_class = "✅", "NO CLEAR RAINFALL SIGNAL (Jun-Aug 2027)", "risk-low"
-        r_plain = "No reliable ocean-based signal for this state. Follow normal planning."
+        r_emoji, r_text, r_class = "✅", "NO RAINFALL ALERT (Jun-Aug 2027)", "risk-low"
+        r_plain = "No unusual rainfall signal for this state. Follow normal planning."
     if heat_cls == "High":
         h_emoji, h_text, h_class = "🔥", "HIGH HEATWAVE RISK (Mar-Jun 2027)", "risk-high"
         h_plain = "Warm ENSO/IOD pattern in the hot season."
@@ -366,12 +366,13 @@ else:
     st.markdown(f"### 📅 Month-by-month forecast ({WIN_ALL})")
     g = fm[fm.SUBDIVISION == selected][["MONTH", "Rainfall_Pred", "Rain_Confidence", "Heat_Risk", "Alert"]].copy()
     g["MONTH"] = g["MONTH"].map(_mname)
-    g["Rainfall_Pred"] = g["Rainfall_Pred"].map(RAIN_TXT)
-    g.columns = ["Month", "Rainfall", "Confidence", "Heat risk", "Alert"]
+    g["Rainfall_Pred"] = [RAIN_TXT[p] if c != "Low" else "—" for p, c in zip(g["Rainfall_Pred"], g["Rain_Confidence"])]
+    g = g.drop(columns=["Rain_Confidence"])
+    g.columns = ["Month", "Rainfall", "Heat risk", "Alert"]
     st.dataframe(g.style.apply(
         lambda r: [f"background-color:{COL[r['Alert']]};color:white" if c == "Alert" else "" for c in r.index],
         axis=1), hide_index=True)
-    st.caption("Confidence shows how reliable the ocean signal is for that month. Months far ahead are less certain.")
+    st.caption("— means no clear ocean signal for that month.")
 
     # State-specific risk window
     st.markdown(f"### 📆 When Is {pretty(selected)} Most At Risk?")
@@ -403,10 +404,9 @@ else:
         shp = pd.read_csv("forecast_state_shap.csv")
         shp = shp[shp.SUBDIVISION == selected].merge(
             fm[["SUBDIVISION", "MONTH"] + extra], on=["SUBDIVISION", "MONTH"], how="left")
-        with st.expander("🔍 Why this forecast? What is driving the rainfall?"):
-            if len(shp) == 0:
-                st.write("Rainfall is not forecast for this state in the dry months, so there is nothing to explain.")
-            else:
+        shp = shp[shp.Rain_Confidence != "Low"]                 # explain only months we stand behind
+        if len(shp) > 0:
+            with st.expander("🔍 Why this forecast? What is driving the rainfall?"):
                 months = list(shp.MONTH)
                 default = next((k for k, m in enumerate(months) if m.startswith("2027-06")), 0)
                 pick = st.selectbox("Pick a month", months, index=default, format_func=_mname, key="shap_month")
