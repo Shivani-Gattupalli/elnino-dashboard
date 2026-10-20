@@ -160,8 +160,7 @@ if start_season is None:
 if abs(live_oni) < 0.5:
     est_end = "No active event"
 elif live_oni >= 0.5 and nxt.get("currently_el_nino") and nxt.get("current_event_expected_end"):
-    est_end = (f"Around {pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y')} "
-               "(forecast, low confidence)")
+    est_end = f"Around {pd.to_datetime(nxt['current_event_expected_end']).strftime('%B %Y')}"
 else:
     est_end = "Not available in the latest forecast"
 
@@ -398,42 +397,70 @@ else:
         st.markdown('<div class="info-box">✅ No Orange or Red months in the forecast window for this state.</div>',
                     unsafe_allow_html=True)
 
-    # SHAP explanation (file produced by the Colab SHAP cell)
+    # Plain-language explanation of what drives the forecast (values come from SHAP, computed in Colab)
     if os.path.exists("forecast_state_shap.csv"):
+        extra = [c for c in ["Rain_Confidence", "ONI_fc", "IOD_fc"] if c in fm.columns]
         shp = pd.read_csv("forecast_state_shap.csv")
         shp = shp[shp.SUBDIVISION == selected].merge(
-            fm[["SUBDIVISION", "MONTH", "Rain_Confidence"]], on=["SUBDIVISION", "MONTH"], how="left")
-        with st.expander("🔍 What is driving the rainfall forecast? (SHAP explanation)"):
+            fm[["SUBDIVISION", "MONTH"] + extra], on=["SUBDIVISION", "MONTH"], how="left")
+        with st.expander("🔍 Why this forecast? What is driving the rainfall?"):
             if len(shp) == 0:
                 st.write("Rainfall is not forecast for this state in the dry months, so there is nothing to explain.")
             else:
                 months = list(shp.MONTH)
                 default = next((k for k, m in enumerate(months) if m.startswith("2027-06")), 0)
-                pick = st.selectbox("Month", months, index=default, format_func=_mname, key="shap_month")
+                pick = st.selectbox("Pick a month", months, index=default, format_func=_mname, key="shap_month")
                 r = shp[shp.MONTH == pick].iloc[0]
-                fig_s, ax_s = plt.subplots(figsize=(8, 2.6))
-                fig_s.patch.set_facecolor("#F8F9FA")
-                ax_s.set_facecolor("#F8F9FA")
-                names = ["Indian Ocean (IOD)", "Pacific Ocean (El Niño / La Niña)"]
-                vals_s = [r.Indian_Ocean_effect, r.Pacific_effect]
-                ax_s.barh(names, vals_s, color=["#2E86C1" if v >= 0 else "#E67E22" for v in vals_s])
-                ax_s.axvline(0, color="black", linewidth=1)
-                lim = max(0.3, max(abs(v) for v in vals_s) * 1.4)
-                ax_s.set_xlim(-lim, lim)
-                ax_s.set_xlabel("← pushes rainfall DOWN        pushes rainfall UP →", fontsize=9)
-                for k, v in enumerate(vals_s):
-                    ax_s.text(v + (0.02 * lim if v >= 0 else -0.02 * lim), k, f"{v:+.2f}",
-                              va="center", ha="left" if v >= 0 else "right", fontsize=9)
-                ax_s.spines["top"].set_visible(False)
-                ax_s.spines["right"].set_visible(False)
-                st.pyplot(fig_s)
-                plt.close(fig_s)
-                net = "drier" if r.Rain_Z < -0.05 else ("wetter" if r.Rain_Z > 0.05 else "close to normal")
-                conf = r.Rain_Confidence if isinstance(r.Rain_Confidence, str) else "Low"
-                st.markdown(f"**Net effect for {_mname(pick)}: {net} than usual** (reliability: {conf}). "
-                            "Each bar shows how much that ocean factor moves this month's rainfall away from a "
-                            "typical year, measured in standard deviations. Computed with SHAP on the "
-                            "month-wise rainfall model.")
+
+                def strength(v):
+                    a_ = abs(v)
+                    return "No real effect" if a_ < 0.1 else ("Slight" if a_ < 0.3 else ("Moderate" if a_ < 0.6 else "Strong"))
+
+                def bar(v, title, status):
+                    w = min(abs(v) / 0.8, 1) * 50                         # percent of the track on one side
+                    colr = "#2E86C1" if v >= 0 else "#E67E22"
+                    left = 50 if v >= 0 else 50 - w
+                    word = strength(v)
+                    verdict = word if word == "No real effect" else f"{word}: pushes rain {'UP (wetter)' if v >= 0 else 'DOWN (drier)'}"
+                    return (f"<div style='margin:10px 0;color:#222'><b>{title}</b>"
+                            f"<div style='font-size:0.85rem;color:#555'>{status}</div>"
+                            f"<div style='position:relative;height:18px;background:#E5E8EB;border-radius:9px;margin:6px 0'>"
+                            f"<div style='position:absolute;left:50%;top:0;height:18px;border-left:2px solid #555'></div>"
+                            f"<div style='position:absolute;left:{left}%;width:{w}%;height:18px;background:{colr};"
+                            f"border-radius:9px'></div></div>"
+                            f"<div style='display:flex;justify-content:space-between;font-size:0.8rem;color:#777'>"
+                            f"<span>← Drier</span><span>Wetter →</span></div>"
+                            f"<div style='font-weight:bold;color:{colr}'>{verdict}</div></div>")
+
+                if "ONI_fc" in r.index and pd.notna(r.ONI_fc):
+                    p_stat = ("warmer than normal (El Niño)" if r.ONI_fc >= 0.5 else
+                              "cooler than normal (La Niña)" if r.ONI_fc <= -0.5 else "near normal")
+                    p_stat = f"Expected in {_mname(pick)}: {p_stat}"
+                else:
+                    p_stat = ""
+                if "IOD_fc" in r.index and pd.notna(r.IOD_fc):
+                    i_stat = ("warmer in the west (positive IOD)" if r.IOD_fc >= 0.4 else
+                              "cooler in the west (negative IOD)" if r.IOD_fc <= -0.4 else "near normal")
+                    i_stat = f"Expected in {_mname(pick)}: {i_stat}"
+                else:
+                    i_stat = ""
+
+                st.markdown(bar(r.Pacific_effect, "🌊 Pacific Ocean (El Niño / La Niña)", p_stat)
+                            + bar(r.Indian_Ocean_effect, "🌀 Indian Ocean (IOD)", i_stat),
+                            unsafe_allow_html=True)
+
+                z = r.Rain_Z
+                size = "close to normal" if abs(z) < 0.15 else ("slightly " if abs(z) < 0.4 else "noticeably ")
+                net = size if size == "close to normal" else size + ("drier than usual" if z < 0 else "wetter than usual")
+                conf = r.Rain_Confidence if "Rain_Confidence" in r.index and isinstance(r.Rain_Confidence, str) else "Low"
+                trust = {"Low": "This signal is weak, so treat it as a hint, not a prediction.",
+                         "Medium": "This signal is of medium reliability.",
+                         "High": "This signal is fairly reliable."}.get(conf, "")
+                st.markdown(f'<div class="info-box"><b>In short:</b> Together, the two oceans point to rainfall in '
+                            f'{pretty(selected)} being <b>{net}</b> in {_mname(pick)}. {trust}</div>',
+                            unsafe_allow_html=True)
+                st.caption("The bars show how much each ocean pulls rainfall away from a typical year "
+                           "(explained with SHAP).")
 
     # Actions
     st.markdown("---")
