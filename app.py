@@ -1,4 +1,5 @@
 import json
+import os
 import warnings
 from io import StringIO
 
@@ -373,21 +374,66 @@ else:
         axis=1), hide_index=True)
     st.caption("Confidence shows how reliable the ocean signal is for that month. Months far ahead are less certain.")
 
-    # Timeline
-    st.markdown(f"### ⏱️ How Long Will This Affect {pretty(selected)}?")
-    st.markdown(
-        f'<div class="timeline-box"><table width="100%"><tr>'
-        f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">🌊</div>'
-        f'<div style="font-weight:bold;color:#1B2A4A">{phase_name} Started</div>'
-        f'<div style="color:#555;font-size:0.95rem">{start_season}</div></td>'
-        f'<td width="33%" style="text-align:center;padding:10px;border-left:2px dashed #CBD5E0;'
-        f'border-right:2px dashed #CBD5E0"><div style="font-size:1.5rem">📍</div>'
-        f'<div style="font-weight:bold;color:#1B2A4A">Right Now</div>'
-        f'<div style="color:#555;font-size:0.95rem">{live_season} | ONI = {live_oni:.2f}</div></td>'
-        f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">🔚</div>'
-        f'<div style="font-weight:bold;color:#CC0000">Expected End</div>'
-        f'<div style="color:#CC0000;font-size:0.9rem">{est_end}</div></td></tr></table></div>',
-        unsafe_allow_html=True)
+    # State-specific risk window
+    st.markdown(f"### 📆 When Is {pretty(selected)} Most At Risk?")
+    gs = fm[fm.SUBDIVISION == selected].sort_values("MONTH")
+    watch = gs[gs.Alert != "Green"]
+    if len(watch):
+        worst = watch.loc[watch.Alert.map(RANK).idxmax()]
+        st.markdown(
+            f'<div class="timeline-box"><table width="100%"><tr>'
+            f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">👀</div>'
+            f'<div style="font-weight:bold;color:#1B2A4A">First month to watch</div>'
+            f'<div style="color:#555;font-size:0.95rem">{_mname(watch.MONTH.iloc[0])}</div></td>'
+            f'<td width="33%" style="text-align:center;padding:10px;border-left:2px dashed #CBD5E0;'
+            f'border-right:2px dashed #CBD5E0"><div style="font-size:1.5rem">🚦</div>'
+            f'<div style="font-weight:bold;color:#1B2A4A">Highest alert</div>'
+            f'<div style="color:{COL[worst.Alert]};font-weight:bold;font-size:0.95rem">'
+            f'{worst.Alert} ({_mname(worst.MONTH)})</div></td>'
+            f'<td width="33%" style="text-align:center;padding:10px"><div style="font-size:1.5rem">📅</div>'
+            f'<div style="font-weight:bold;color:#1B2A4A">Months on alert</div>'
+            f'<div style="color:#555;font-size:0.95rem">{len(watch)} of {len(gs)}</div></td></tr></table></div>',
+            unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="info-box">✅ No Orange or Red months in the forecast window for this state.</div>',
+                    unsafe_allow_html=True)
+
+    # SHAP explanation (file produced by the Colab SHAP cell)
+    if os.path.exists("forecast_state_shap.csv"):
+        shp = pd.read_csv("forecast_state_shap.csv")
+        shp = shp[shp.SUBDIVISION == selected].merge(
+            fm[["SUBDIVISION", "MONTH", "Rain_Confidence"]], on=["SUBDIVISION", "MONTH"], how="left")
+        with st.expander("🔍 What is driving the rainfall forecast? (SHAP explanation)"):
+            if len(shp) == 0:
+                st.write("Rainfall is not forecast for this state in the dry months, so there is nothing to explain.")
+            else:
+                months = list(shp.MONTH)
+                default = next((k for k, m in enumerate(months) if m.startswith("2027-06")), 0)
+                pick = st.selectbox("Month", months, index=default, format_func=_mname, key="shap_month")
+                r = shp[shp.MONTH == pick].iloc[0]
+                fig_s, ax_s = plt.subplots(figsize=(8, 2.6))
+                fig_s.patch.set_facecolor("#F8F9FA")
+                ax_s.set_facecolor("#F8F9FA")
+                names = ["Indian Ocean (IOD)", "Pacific Ocean (El Niño / La Niña)"]
+                vals_s = [r.Indian_Ocean_effect, r.Pacific_effect]
+                ax_s.barh(names, vals_s, color=["#2E86C1" if v >= 0 else "#E67E22" for v in vals_s])
+                ax_s.axvline(0, color="black", linewidth=1)
+                lim = max(0.3, max(abs(v) for v in vals_s) * 1.4)
+                ax_s.set_xlim(-lim, lim)
+                ax_s.set_xlabel("← pushes rainfall DOWN        pushes rainfall UP →", fontsize=9)
+                for k, v in enumerate(vals_s):
+                    ax_s.text(v + (0.02 * lim if v >= 0 else -0.02 * lim), k, f"{v:+.2f}",
+                              va="center", ha="left" if v >= 0 else "right", fontsize=9)
+                ax_s.spines["top"].set_visible(False)
+                ax_s.spines["right"].set_visible(False)
+                st.pyplot(fig_s)
+                plt.close(fig_s)
+                net = "drier" if r.Rain_Z < -0.05 else ("wetter" if r.Rain_Z > 0.05 else "close to normal")
+                conf = r.Rain_Confidence if isinstance(r.Rain_Confidence, str) else "Low"
+                st.markdown(f"**Net effect for {_mname(pick)}: {net} than usual** (reliability: {conf}). "
+                            "Each bar shows how much that ocean factor moves this month's rainfall away from a "
+                            "typical year, measured in standard deviations. Computed with SHAP on the "
+                            "month-wise rainfall model.")
 
     # Actions
     st.markdown("---")
